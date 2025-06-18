@@ -101,19 +101,13 @@ class Seller:
         :param rewards: ndarray of shape (num_products,)
             with rewards for each product.
         """
-        # Check inventory constraint before updating reward
-        if not self.inventory_constraint(rewards):
-            rewards = np.zeros_like(rewards)  # or apply a penalty
-
-        for product_idx, (price_idx, reward) in enumerate(
-            zip(actions, rewards)
-        ):
-            self.counts[product_idx, price_idx] += 1
-            n = self.counts[product_idx, price_idx]
-            value = self.values[product_idx, price_idx]
-            self.values[
-                product_idx, price_idx
-            ] = ((n - 1) / n) * value + (1 / n) * reward
+        self.total_steps += 1
+        for i, price_idx in enumerate(actions):
+            self.counts[i, price_idx] += 1
+            # Incremental mean update
+            n = self.counts[i, price_idx]
+            old_value = self.values[i, price_idx]
+            self.values[i, price_idx] += (rewards[i] - old_value) / n
 
         self.history_rewards.append(np.sum(rewards))
 
@@ -138,3 +132,43 @@ class Seller:
             )
             return False
         return True  # No constraint violation
+
+    def pull_arm(self):
+        """
+        Select a price index for each product (like an agent choosing arms).
+        Returns: array of chosen price indices (one per product)
+        """
+        chosen_indices = []
+        n_init = 3  # Try each price at least n_init times
+        for i in range(self.num_products):
+            unexplored = np.where(self.counts[i] < n_init)[0]
+            if len(unexplored) > 0:
+                idx = unexplored[0]
+            else:
+                ucb = self.values[i] + np.sqrt(
+                    2 * np.log(self.total_steps + 1) /
+                    np.maximum(self.counts[i], 1)
+                )
+                idx = np.argmax(ucb)
+            chosen_indices.append(idx)
+        return np.array(chosen_indices)
+
+    def update(self, rewards, actions):
+        """
+        Update statistics after observing rewards.
+        :param rewards: ndarray of rewards per product
+        :param actions: ndarray of chosen price indices per product
+        """
+        # Optionally clip rewards to [0, 1] or another reasonable range
+        rewards = np.clip(rewards, 0, 1)
+        self.update_ucb(actions, rewards)
+
+    def reset(self):
+        """
+        Reset the seller's statistics for a new trial.
+        """
+        self.counts = np.zeros((self.num_products, self.num_prices))
+        self.values = np.zeros((self.num_products, self.num_prices))
+        self.total_steps = 0
+        self.history_rewards = []
+        self.history_chosen_prices = []

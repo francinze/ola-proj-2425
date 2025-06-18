@@ -24,6 +24,17 @@ class Buyer:
                 loc=0.5, scale=0.15, size=n_products
             )
             self.valuations = np.clip(self.valuations, 0, 1)
+        elif distribution == "exponential":
+            # mean=0.5, scale=0.5, clipped to [0,1]
+            self.valuations = np.clip(np.random.exponential(scale=0.5, size=n_products), 0, 1)
+        elif distribution == "beta":
+            # Beta(2,5) is skewed toward 0, Beta(5,2) toward 1
+            self.valuations = np.random.beta(a=2, b=5, size=n_products)
+        elif distribution == "lognormal":
+            # lognormal with mean ~0.5, clipped to [0,1]
+            self.valuations = np.clip(np.random.lognormal(mean=-0.7, sigma=0.5, size=n_products), 0, 1)
+        else:
+            raise ValueError(f"Unknown distribution: {distribution}")
 
     def __str__(self):
         return f"Buyer(name={self.name}, valuations={self.valuations})"

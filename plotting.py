@@ -59,28 +59,18 @@ def plot_selection_frequency(seller):
     """
     Plot selection frequency of products and prices.
     """
-    product_counts = np.sum(seller.counts, axis=1)
     price_counts = np.sum(seller.counts, axis=0)
 
-    fig, axs = plt.subplots(1, 2, figsize=(14, 6))
-
-    # Product selection frequency
-    axs[0].bar(range(seller.num_products), product_counts)
-    axs[0].set_xlabel("Product ID")
-    axs[0].set_ylabel("Total Times Any Price Chosen")
-    axs[0].set_title("Product Selection Frequency")
-    axs[0].set_xticks(range(seller.num_products))
-    axs[0].set_xticklabels([f"{i}" for i in range(seller.num_products)])
+    plt.figure(figsize=(10, 6))
 
     # Price selection frequency
     price_indices = np.arange(len(seller.price_grid[0]))
-    axs[1].bar(price_indices, price_counts)
-    axs[1].set_xlabel("Price")
-    axs[1].set_ylabel("Total Times Chosen Across Products")
-    axs[1].set_title("Price Selection Frequency")
+    plt.bar(price_indices, price_counts)
+    plt.xlabel("Price")
+    plt.ylabel("Total Times Chosen Across Products")
+    plt.title("Price Selection Frequency")
     x_ticks = [f"{p:.2f}" for p in seller.price_grid[0]]
-    axs[1].set_xticks(price_indices)
-    axs[1].set_xticklabels(x_ticks, rotation=45)
+    plt.xticks(price_indices, labels=x_ticks, rotation=45)
 
     plt.tight_layout()
     plt.show()
