@@ -19,12 +19,17 @@ class Buyer:
             self.valuations = np.random.binomial(
                 n=1, p=0.5, size=n_products
             )
+        elif distribution == "gaussian":
+            self.valuations = np.random.normal(
+                loc=0.5, scale=0.15, size=n_products
+            )
+            self.valuations = np.clip(self.valuations, 0, 1)
 
     def __str__(self):
         return f"Buyer(name={self.name}, valuations={self.valuations})"
 
     def __repr__(self):
-        return f"Buyer(name={self.name}, valuations={self.valuations})"
+        return f"Buyer number {self.name}"
 
     def make_purchases(self, prices: np.ndarray[float, Any]) -> List[float]:
         """
@@ -33,8 +38,6 @@ class Buyer:
         :return: A list of purchased products.
         """
         purchased_products: List[float] = []
-        print(f"Buyer valuations: {self.valuations}")
-        print(f"Prices: {prices}")
         for price in prices:
             product_index = prices.tolist().index(price)
             if self.valuations[product_index] > price:

@@ -1,0 +1,8 @@
+{
+    "python.analysis.ignore": [
+        "*"
+    ],
+    "pylint.ignorePatterns": [
+        "*"
+    ]
+}

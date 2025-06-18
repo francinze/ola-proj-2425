@@ -9,12 +9,12 @@ class Setting:
     def __init__(
         self,
         T: int = np.random.randint(99, 100),
-        N: int = np.random.randint(100, 1000),
-        p_size: int = 10,
+        n_products: int = 10,
+        discretization: int = 10,
         B: int = np.random.randint(1, 1000),
     ):
         self.T = T
-        self.N = N  # Number of buyers
-        self.products = np.arange(p_size)  # Products
-        self.P = np.zeros(p_size)  # Prices
+        self.products = np.arange(n_products)  # Products
+        price_grid = np.linspace(0.1, 1.0, discretization)
+        self.P = np.tile(price_grid, (n_products, 1))  # Price grid
         self.B = B  # Production capacity
