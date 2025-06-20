@@ -55,27 +55,6 @@ def plot_avg_reward(seller):
     plt.show()
 
 
-def plot_selection_frequency(seller):
-    """
-    Plot selection frequency of products and prices.
-    """
-    price_counts = np.sum(seller.counts, axis=0)
-
-    plt.figure(figsize=(10, 6))
-
-    # Price selection frequency
-    price_indices = np.arange(len(seller.price_grid[0]))
-    plt.bar(price_indices, price_counts)
-    plt.xlabel("Price")
-    plt.ylabel("Total Times Chosen Across Products")
-    plt.title("Price Selection Frequency")
-    x_ticks = [f"{p:.2f}" for p in seller.price_grid[0]]
-    plt.xticks(price_indices, labels=x_ticks, rotation=45)
-
-    plt.tight_layout()
-    plt.show()
-
-
 def plot_heatmap(seller):
     """
     Plot heatmap of product-price selection frequency.
@@ -98,5 +77,4 @@ def plot_all(seller):
     """
     plot_cum_reward(seller)
     plot_avg_reward(seller)
-    plot_selection_frequency(seller)
     plot_heatmap(seller)

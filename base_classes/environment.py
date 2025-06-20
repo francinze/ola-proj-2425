@@ -36,42 +36,46 @@ class Environment:
         :param a_t: Optional array of price indices (actions) for each product.
         :return: reward vector (or sum), chosen price indices
         """
-        if a_t is not None:
-            # Set seller's chosen prices to a_t
-            chosen_prices = np.array([
-                self.seller.price_grid[i, a_t[i]]
-                for i in range(self.seller.num_products)
-            ])
-            chosen_indices = a_t
-            self.seller.history_chosen_prices.append(chosen_indices)
-        else:
-            chosen_prices, chosen_indices = self.seller.choose_prices()
-        self.prices[self.t] = chosen_prices
-        self.setting.P = chosen_prices
-        self.buyer = Buyer(
-            name=f"Buyer at time {self.t}",
-            n_products=len(self.setting.products),
-            distribution=self.distribution,
-        )
-        purchased = self.buyer.make_purchases(chosen_prices)
-        # Convert purchases to reward vector (e.g., 1 if bought, 0 if not)
-        rewards = np.zeros(len(chosen_prices))
-        for i, price in enumerate(chosen_prices):
-            if price in purchased:
-                rewards[i] = price
-        self.seller.update(rewards, chosen_indices)
-        self.purchases[self.t] = rewards
-        self.t += 1
-        return rewards, chosen_indices
+        try:
+            if a_t is not None:
+                # Set seller's chosen prices to a_t
+                chosen_prices = np.array([
+                    self.seller.price_grid[i, a_t[i]]
+                    for i in range(self.seller.num_products)
+                ])
+                chosen_indices = a_t
+                self.seller.history_chosen_prices.append(chosen_indices)
+            else:
+                chosen_prices, chosen_indices = self.seller.choose_prices()
+            self.prices[self.t] = chosen_prices
+            self.setting.P = chosen_prices
+            self.buyer = Buyer(
+                name=f"Buyer at time {self.t}",
+                n_products=len(self.setting.products),
+                distribution=self.distribution,
+            )
+            purchased = self.buyer.make_purchases(chosen_prices)
+            # Apply seller's inventory constraint before finalizing purchases
+            purchased = self.seller.inventory_constraint(purchased)
+            rewards = np.zeros(len(chosen_prices), dtype=float)
+            # Calculate rewards:
+            # reward for each product is its price if purchased, else 0
+            for i in range(len(chosen_prices)):
+                if i in purchased:
+                    rewards[i] = chosen_prices[i]
+            self.seller.update(rewards, chosen_indices)
+            self.purchases[self.t] = purchased
+            self.t += 1
+            return rewards, chosen_indices
+        except Exception as e:
+            print(f"Error in round {self.t}: {e}")
+            return None, None
 
     def play_all_rounds(self) -> None:
         '''Play all rounds of the simulation.'''
         for _ in range(self.setting.T):
-            try:
-                actions = self.seller.pull_arm()
-                self.round(a_t=actions)
-            except Exception as e:
-                print(f"Error during round {self.t}: {e}")
+            actions = self.seller.pull_arm()
+            self.round(a_t=actions)
         if self.verbose:
             print("Simulation finished.")
             print(f"Final prices: {self.prices}")

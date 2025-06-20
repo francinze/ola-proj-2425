@@ -26,13 +26,19 @@ class Buyer:
             self.valuations = np.clip(self.valuations, 0, 1)
         elif distribution == "exponential":
             # mean=0.5, scale=0.5, clipped to [0,1]
-            self.valuations = np.clip(np.random.exponential(scale=0.5, size=n_products), 0, 1)
+            self.valuations = np.clip(
+                np.random.exponential(scale=0.5, size=n_products), 0, 1
+            )
         elif distribution == "beta":
             # Beta(2,5) is skewed toward 0, Beta(5,2) toward 1
             self.valuations = np.random.beta(a=2, b=5, size=n_products)
         elif distribution == "lognormal":
             # lognormal with mean ~0.5, clipped to [0,1]
-            self.valuations = np.clip(np.random.lognormal(mean=-0.7, sigma=0.5, size=n_products), 0, 1)
+            self.valuations = np.clip(
+                np.random.lognormal(mean=-0.7, sigma=0.5, size=n_products),
+                0,
+                1
+            )
         else:
             raise ValueError(f"Unknown distribution: {distribution}")
 
@@ -49,8 +55,9 @@ class Buyer:
         :return: A list of purchased products.
         """
         purchased_products: List[float] = []
-        for price in prices:
-            product_index = prices.tolist().index(price)
-            if self.valuations[product_index] > price:
+        for i, price in enumerate(prices):
+            if self.valuations[i] > price:
                 purchased_products.append(price)
+            else:
+                purchased_products.append(0)
         return purchased_products

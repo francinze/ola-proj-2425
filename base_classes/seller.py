@@ -14,7 +14,7 @@ class Seller:
         self,
         products: np.ndarray[float, Any],
         price_grid: np.ndarray[float, Any],
-        B: int = np.random.randint(1, 1000),
+        B: int = None,
         inventory_constraint: str = "lax",
         verbose: bool = True
     ):
@@ -26,7 +26,10 @@ class Seller:
         if price_grid.ndim == 1:
             price_grid = price_grid.reshape((len(products), -1))
         self.price_grid = price_grid
-        self.B = B  # Production capacity
+        if B is None:
+            self.B = len(products) * np.random.random()
+        else:
+            self.B = B  # Production capacity
         self.inv_rule: str = inventory_constraint
         self.verbose = verbose
 
@@ -111,27 +114,43 @@ class Seller:
 
         self.history_rewards.append(np.sum(rewards))
 
-    def inventory_constraint(self, purchases: np.ndarray[float, Any]) -> bool:
+    def inventory_constraint(
+        self, purchases: np.ndarray[float, Any]
+    ) -> np.ndarray[float, Any]:
         """
         Check if the purchases exceed the production capacity.
         :param purchases: A list of purchases.
         """
-        total_purchases = np.sum(purchases)
+        purchases = np.array(purchases, dtype=float)
+        total_purchases = len(purchases)
         exceeding_capacity = max(0, total_purchases - self.B)
-
         if self.inv_rule == "lax" and exceeding_capacity > 0:
-            print(
-                "Warning: Purchases exceed production capacity by "
-                f"{exceeding_capacity}."
-            )
-            return True
+            if self.verbose:
+                print(
+                    "Warning: Purchases exceed production capacity by "
+                    f"{exceeding_capacity}."
+                )
+            # Set to 0 enough purchases (randomly)
+            # until total does not exceed capacity
+            if total_purchases > self.B:
+                indices = np.where(purchases > 0)[0]
+                np.random.shuffle(indices)
+                running_total = total_purchases
+                for idx in indices:
+                    if running_total <= self.B:
+                        break
+                    running_total -= purchases[idx]
+                    purchases[idx] = 0
+            return purchases
         elif self.inv_rule == "strict" and exceeding_capacity > 0:
-            print(
-                "Error: Purchases exceed production capacity by "
-                f"{exceeding_capacity}."
-            )
-            return False
-        return True  # No constraint violation
+            if self.verbose:
+                print(
+                    "Error: Purchases exceed production capacity by "
+                    f"{exceeding_capacity}."
+                )
+            # Return all zeros, keeping the same length
+            return np.zeros_like(purchases)
+        return purchases  # No constraint violation
 
     def pull_arm(self):
         """
