@@ -5,96 +5,59 @@ from typing import Any
 
 import numpy as np
 
+from .setting import Setting
+
 
 class Seller:
     """
     Seller class for the simulation of a market.
     """
-    def __init__(
-        self,
-        products: np.ndarray[float, Any],
-        price_grid: np.ndarray[float, Any],
-        B: int = None,
-        inventory_constraint: str = "lax",
-        verbose: bool = True
-    ):
+    def __init__(self, setting: Setting):
         """
         Initialize the Seller class.
         :param products: A list of products.
         """
-        self.products = products
-        if price_grid.ndim == 1:
-            price_grid = price_grid.reshape((len(products), -1))
-        self.price_grid = price_grid
-        if B is None:
-            self.B = len(products) * np.random.random()
-        else:
-            self.B = B  # Production capacity
-        self.inv_rule: str = inventory_constraint
-        self.verbose = verbose
+        self.products = np.arange(setting.n_products)  # Products
+        self.price_grid = np.linspace(0.1, 1.0, int(1 / setting.epsilon))
+        self.price_grid = np.tile(self.price_grid, (setting.n_products, 1))
+        if self.price_grid.ndim == 1:
+            self.price_grid = self.price_grid.reshape((len(self.products), -1))
+        self.B = setting.B  # Production capacity
+        self.inv_rule: str = setting.inventory_constraint
+        self.setting = setting
+        self.verbose = setting.verbose == 'all' or setting.verbose == 'seller'
 
-        self.num_products = len(products)
-        self.num_prices = price_grid.shape[1]
+        self.num_products = len(self.products)
+        self.num_prices = self.price_grid.shape[1]
 
         # UCB1 stats for each product and price
         self.counts = np.zeros((self.num_products, self.num_prices))
         self.values = np.zeros((self.num_products, self.num_prices))
         self.total_steps = 0
 
+        if self.verbose:
+            print(f"Initialized Seller with {self.num_products} products "
+                  f"and {self.num_prices} price options per product.")
+            print(f"Production capacity (B): {self.B}")
+
         # History for tracking rewards and arm selections
         self.history_rewards = []
         self.history_chosen_prices = []
 
-    def choose_prices(self):
+    def yield_prices(self, chosen_indices):
         """
         For each product, choose a price using UCB1.
         Returns: array of chosen prices (one per product),
             array of chosen price indices (one per product)
         """
         self.total_steps += 1
-        chosen_prices = []
-        chosen_indices = []
-
-        for i in range(self.num_products):
-            if self.verbose:
-                print(f"\n[DEBUG] Product {i}:")
-            ucb_values = np.zeros(self.num_prices)
-            for j in range(self.num_prices):
-                if self.counts[i, j] == 0:
-                    ucb_values[j] = np.inf
-                    if self.verbose:
-                        print(
-                            f"Price index {j}: count=0, ucb=inf "
-                            "(unexplored)"
-                        )
-                else:
-                    avg_reward = self.values[i, j] / self.counts[i, j]
-                    confidence = np.sqrt(
-                        2 * np.log(self.total_steps) / self.counts[i, j]
-                    )
-                    ucb_values[j] = avg_reward + confidence
-                    if self.verbose:
-                        print(
-                            f"Price index {j}: count={self.counts[i, j]}, "
-                            f"avg_reward={avg_reward:.4f}, "
-                            f"confidence={confidence:.4f}, "
-                            f"ucb={ucb_values[j]:.4f}"
-                        )
-            max_ucb = np.max(ucb_values)
-            candidates = np.where(ucb_values == max_ucb)[0]
-            chosen_j = np.random.choice(candidates)
-            if self.verbose:
-                print(
-                    f"Chosen price index {chosen_j} "
-                    f"for product {i} (ucb={ucb_values[chosen_j]})"
-                )
-            chosen_prices.append(self.price_grid[i, chosen_j])
-            chosen_indices.append(chosen_j)
-
+        chosen_prices = self.price_grid[
+            np.arange(self.num_products), chosen_indices
+        ]
         self.history_chosen_prices.append(chosen_indices)
         if self.verbose:
             print("Chosen prices for products:", chosen_prices)
-        return np.array(chosen_prices), np.array(chosen_indices)
+        return np.array(chosen_prices)
 
     def update_ucb(self, actions, rewards):
         """
@@ -122,7 +85,7 @@ class Seller:
         :param purchases: A list of purchases.
         """
         purchases = np.array(purchases, dtype=float)
-        total_purchases = len(purchases)
+        total_purchases = np.count_nonzero(purchases)
         exceeding_capacity = max(0, total_purchases - self.B)
         if self.inv_rule == "lax" and exceeding_capacity > 0:
             if self.verbose:
@@ -139,9 +102,8 @@ class Seller:
                 for idx in indices:
                     if running_total <= self.B:
                         break
-                    running_total -= purchases[idx]
+                    running_total -= 1
                     purchases[idx] = 0
-            return purchases
         elif self.inv_rule == "strict" and exceeding_capacity > 0:
             if self.verbose:
                 print(
@@ -149,7 +111,11 @@ class Seller:
                     f"{exceeding_capacity}."
                 )
             # Return all zeros, keeping the same length
-            return np.zeros_like(purchases)
+            purchases = np.zeros_like(purchases)
+        if self.verbose:
+            print(
+                f"Purchases after inventory constraint: {purchases}"
+            )
         return purchases  # No constraint violation
 
     def pull_arm(self):
@@ -157,20 +123,22 @@ class Seller:
         Select a price index for each product (like an agent choosing arms).
         Returns: array of chosen price indices (one per product)
         """
-        chosen_indices = []
-        n_init = 3  # Try each price at least n_init times
-        for i in range(self.num_products):
-            unexplored = np.where(self.counts[i] < n_init)[0]
-            if len(unexplored) > 0:
-                idx = unexplored[0]
-            else:
+        try:
+            chosen_indices = np.array([], dtype=int)
+            for i in range(self.num_products):
                 ucb = self.values[i] + np.sqrt(
-                    2 * np.log(self.total_steps + 1) /
-                    np.maximum(self.counts[i], 1)
-                )
+                        2 * np.log(self.total_steps + 1) /
+                        np.maximum(self.counts[i], 1)
+                    )
+                if self.verbose:
+                    print(f"UCB values for product {i}: {ucb}")
                 idx = np.argmax(ucb)
-            chosen_indices.append(idx)
-        return np.array(chosen_indices)
+                chosen_indices = np.append(chosen_indices, idx)
+            if self.verbose:
+                print(f"Chosen price indices for products: {chosen_indices}")
+            return chosen_indices
+        except Exception as e:
+            print(f"Error in pull_arm: {e}")
 
     def update(self, rewards, actions):
         """
@@ -187,7 +155,7 @@ class Seller:
         Reset the seller's statistics for a new trial.
         """
         self.counts = np.zeros((self.num_products, self.num_prices))
-        self.values = np.zeros((self.num_products, self.num_prices))
+        self.values = np.ones((self.num_products, self.num_prices))
         self.total_steps = 0
         self.history_rewards = []
         self.history_chosen_prices = []

@@ -37,10 +37,12 @@ def plot_avg_reward(seller):
         if window % 2 == 0:
             window += 1  # Ensure window is odd for centering
         smoothed = np.convolve(
-            avg_rewards, np.ones(window) / window, mode='same'
+            avg_rewards, np.ones(window) / window, mode='valid'
         )
+        # Adjust x to align with the center of the window
+        x_smoothed = np.arange(window // 2, len(avg_rewards) - window // 2)
         plt.plot(
-            x,
+            x_smoothed,
             smoothed,
             label="Smoothed Reward per Round",
             color='green'

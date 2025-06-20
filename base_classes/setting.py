@@ -10,11 +10,18 @@ class Setting:
         self,
         T: int = np.random.randint(99, 100),
         n_products: int = 10,
-        discretization: int = 10,
-        B: int = np.random.randint(1, 1000),
+        epsilon: float = 0.1,
+        B: int = None,
+        distribution: str = "uniform",
+        inventory_constraint: str = "lax",
+        verbose: str = 'all'
     ):
         self.T = T
-        self.products = np.arange(n_products)  # Products
-        price_grid = np.linspace(0.1, 1.0, discretization)
-        self.P = np.tile(price_grid, (n_products, 1))  # Price grid
+        self.n_products = n_products
+        if B is None:
+            B = np.random.randint(1, self.n_products)
         self.B = B  # Production capacity
+        self.distribution = distribution  # Distribution type
+        self.inventory_constraint = inventory_constraint
+        self.verbose = verbose
+        self.epsilon = epsilon

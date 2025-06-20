@@ -13,23 +13,16 @@ class Environment:
     behavior of the buyer.
     It also handles the simulation of multiple rounds of interactions.
     """
-    def __init__(
-        self, setting: Setting, distribution: str, verbose: bool = True
-    ):
-        self.seller = Seller(setting.products, setting.P, verbose=verbose)
+    def __init__(self, setting: Setting):
         self.setting = setting
-        self.distribution = distribution
         self.t = 0
-        self.verbose = verbose
+        self.distribution = setting.distribution
+        self.seller = Seller(setting)
 
         # Collect log of results
-        self.prices = np.ones((self.setting.T, len(self.setting.products)))
-        self.purchases = np.zeros(
-            (self.setting.T, len(self.setting.products)),
-            dtype=int
-        )
+        self.reset()
 
-    def round(self, a_t=None):
+    def round(self):
         """
         Play one round: seller chooses prices (or uses a_t if given),
         buyer responds, reward returned.
@@ -37,49 +30,33 @@ class Environment:
         :return: reward vector (or sum), chosen price indices
         """
         try:
-            if a_t is not None:
-                # Set seller's chosen prices to a_t
-                chosen_prices = np.array([
-                    self.seller.price_grid[i, a_t[i]]
-                    for i in range(self.seller.num_products)
-                ])
-                chosen_indices = a_t
-                self.seller.history_chosen_prices.append(chosen_indices)
-            else:
-                chosen_prices, chosen_indices = self.seller.choose_prices()
+            actions = self.seller.pull_arm()
+            # Set seller's chosen prices to a_t
+            chosen_prices = self.seller.yield_prices(actions)
+            chosen_indices = actions
+            self.seller.history_chosen_prices.append(chosen_indices)
             self.prices[self.t] = chosen_prices
-            self.setting.P = chosen_prices
             self.buyer = Buyer(
                 name=f"Buyer at time {self.t}",
-                n_products=len(self.setting.products),
-                distribution=self.distribution,
+                setting=self.setting,
             )
-            purchased = self.buyer.make_purchases(chosen_prices)
+            demand = self.buyer.yield_demand(chosen_prices)
             # Apply seller's inventory constraint before finalizing purchases
-            purchased = self.seller.inventory_constraint(purchased)
-            rewards = np.zeros(len(chosen_prices), dtype=float)
-            # Calculate rewards:
-            # reward for each product is its price if purchased, else 0
-            for i in range(len(chosen_prices)):
-                if i in purchased:
-                    rewards[i] = chosen_prices[i]
-            self.seller.update(rewards, chosen_indices)
+            purchased = self.seller.inventory_constraint(demand)
+            self.seller.update(purchased, actions)
             self.purchases[self.t] = purchased
             self.t += 1
-            return rewards, chosen_indices
         except Exception as e:
             print(f"Error in round {self.t}: {e}")
-            return None, None
 
     def play_all_rounds(self) -> None:
         '''Play all rounds of the simulation.'''
         for _ in range(self.setting.T):
-            actions = self.seller.pull_arm()
-            self.round(a_t=actions)
-        if self.verbose:
+            self.round()
+        if self.setting.verbose == 'all':
             print("Simulation finished.")
-            print(f"Final prices: {self.prices}")
-            print(f"Purchases: {self.purchases}")
+            print(f"Final prices: {self.prices[self.t - 1]}")
+            print(f"Purchases: {self.purchases[self.t - 1]}")
 
     def plot_seller_learning(self):
         """
@@ -93,8 +70,8 @@ class Environment:
         """
         self.seller.reset()
         self.t = 0
-        self.prices = np.ones((self.setting.T, len(self.setting.products)))
+        self.prices = np.ones((self.setting.T, self.setting.n_products))
         self.purchases = np.zeros(
-            (self.setting.T, len(self.setting.products)),
+            (self.setting.T, self.setting.n_products),
             dtype=int
         )
