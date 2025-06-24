@@ -33,6 +33,7 @@ class Seller:
         # UCB1 stats for each product and price
         self.counts = np.zeros((self.num_products, self.num_prices))
         self.values = np.zeros((self.num_products, self.num_prices))
+        self.ucbs = np.full((self.num_products, self.num_prices), np.inf)
         self.total_steps = 0
 
         if self.verbose:
@@ -50,13 +51,10 @@ class Seller:
         Returns: array of chosen prices (one per product),
             array of chosen price indices (one per product)
         """
-        self.total_steps += 1
         chosen_prices = self.price_grid[
             np.arange(self.num_products), chosen_indices
         ]
         self.history_chosen_prices.append(chosen_indices)
-        if self.verbose:
-            print("Chosen prices for products:", chosen_prices)
         return np.array(chosen_prices)
 
     def update_ucb(self, actions, rewards):
@@ -74,6 +72,13 @@ class Seller:
             n = self.counts[i, price_idx]
             old_value = self.values[i, price_idx]
             self.values[i, price_idx] += (rewards[i] - old_value) / n
+            self.ucbs[i, price_idx] = self.values[i, price_idx] + \
+                np.sqrt(2 * np.log(self.total_steps) / n)
+            if self.verbose:
+                print(f"Updated UCB for product {i}, price index {price_idx}: "
+                      f"count={self.counts[i, price_idx]}, "
+                      f"value={self.values[i, price_idx]}, "
+                      f"UCB={self.ucbs[i, price_idx]}")
 
         self.history_rewards.append(np.sum(rewards))
 
@@ -123,16 +128,12 @@ class Seller:
         Select a price index for each product (like an agent choosing arms).
         Returns: array of chosen price indices (one per product)
         """
+        if self.verbose:
+            print(f"Pulling arms at step {self.total_steps}...")
         try:
             chosen_indices = np.array([], dtype=int)
             for i in range(self.num_products):
-                ucb = self.values[i] + np.sqrt(
-                        2 * np.log(self.total_steps + 1) /
-                        np.maximum(self.counts[i], 1)
-                    )
-                if self.verbose:
-                    print(f"UCB values for product {i}: {ucb}")
-                idx = np.argmax(ucb)
+                idx = np.argmax(self.ucbs[i])
                 chosen_indices = np.append(chosen_indices, idx)
             if self.verbose:
                 print(f"Chosen price indices for products: {chosen_indices}")
@@ -150,10 +151,11 @@ class Seller:
         rewards = np.clip(rewards, 0, 1)
         self.update_ucb(actions, rewards)
 
-    def reset(self):
+    def reset(self, setting):
         """
         Reset the seller's statistics for a new trial.
         """
+        self.setting = setting
         self.counts = np.zeros((self.num_products, self.num_prices))
         self.values = np.ones((self.num_products, self.num_prices))
         self.total_steps = 0
