@@ -39,6 +39,15 @@ class Buyer:
             self.valuations = np.clip(np.random.lognormal(
                 mean=-0.7, sigma=0.5, size=setting.n_products
             ), 0, 1)
+        elif setting.distribution == "test":
+            # set valuations in a fixed range for testing purposes
+            limits = np.linspace(0.3, 0.8, setting.n_products)
+            v= np.zeros(setting.n_products)
+            for i in range(setting.n_products):
+                v[i] = np.random.uniform(
+                    low=limits[i] - 0.15, high=limits[i] + 0.15
+                )
+            self.valuations = np.clip(v, 0, 1)
         else:
             raise ValueError(f"Unknown distribution: {setting.distribution}")
 

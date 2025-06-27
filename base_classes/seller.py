@@ -71,7 +71,8 @@ class Seller:
             # Incremental mean update
             n = self.counts[i, price_idx]
             old_value = self.values[i, price_idx]
-            self.values[i, price_idx] += (rewards[i] - old_value) / n
+            self.values[i, price_idx] = self.values[i, price_idx] * (n-1) / n + (rewards[i] - old_value) / n
+            # self.values[i, price_idx] += (rewards[i] - old_value) / n
             self.ucbs[i, price_idx] = self.values[i, price_idx] + \
                 np.sqrt(2 * np.log(self.total_steps) / n)
             if self.verbose:
@@ -157,7 +158,7 @@ class Seller:
         """
         self.setting = setting
         self.counts = np.zeros((self.num_products, self.num_prices))
-        self.values = np.ones((self.num_products, self.num_prices))
+        self.values = np.zeros((self.num_products, self.num_prices))
         self.total_steps = 0
         self.history_rewards = []
         self.history_chosen_prices = []
