@@ -71,10 +71,14 @@ class Seller:
             # Incremental mean update
             n = self.counts[i, price_idx]
             old_value = self.values[i, price_idx]
-            self.values[i, price_idx] = self.values[i, price_idx] * (n-1) / n + (rewards[i] - old_value) / n
-            # self.values[i, price_idx] += (rewards[i] - old_value) / n
-            self.ucbs[i, price_idx] = self.values[i, price_idx] + \
-                np.sqrt(2 * np.log(self.total_steps) / n)
+            if self.total_steps == 1:
+                self.values[i, price_idx] = (rewards[i] - old_value) / n
+                self.ucbs[i, price_idx] = self.values[i, price_idx] + 1
+            else:
+                self.values[i, price_idx] = self.values[i, price_idx] * (n-1) / n + (rewards[i] - old_value) / n
+                # self.values[i, price_idx] += (rewards[i] - old_value) / n
+                self.ucbs[i, price_idx] = self.values[i, price_idx] + \
+                    np.sqrt(2 * np.log(self.total_steps) / n)
             if self.verbose:
                 print(f"Updated UCB for product {i}, price index {price_idx}: "
                       f"count={self.counts[i, price_idx]}, "
