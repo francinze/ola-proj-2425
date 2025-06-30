@@ -24,7 +24,7 @@ class Buyer:
                 low=low, high=high, size=setting.n_products
             )
         elif setting.distribution == "bernoulli":
-            n = self.dist_params[0][0] if len(self.dist_params) > 0 and self.dist_params[0].ndim > 0 else 1
+            n = self.dist_params[0][0] if len(self.dist_params) > 0 > 0 else 1
             p = self.dist_params[1] if len(self.dist_params) > 1 else 0.5
             self.valuations = np.random.binomial(
                 n=n, p=p, size=setting.n_products
