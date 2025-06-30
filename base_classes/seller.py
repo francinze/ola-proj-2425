@@ -30,6 +30,11 @@ class Seller:
         self.num_products = len(self.products)
         self.num_prices = self.price_grid.shape[1]
 
+        # Necessary for UCB1 algorithm
+        self.T = setting.T  # Total number of rounds
+        if self.T is None:
+            self.T = np.random.randint(99, 100)
+
         # UCB1 stats for each product and price
         self.counts = np.zeros((self.num_products, self.num_prices))
         self.values = np.zeros((self.num_products, self.num_prices))
@@ -71,14 +76,16 @@ class Seller:
             # Incremental mean update
             n = self.counts[i, price_idx]
             old_value = self.values[i, price_idx]
-            if self.total_steps == 1:
-                self.values[i, price_idx] = (rewards[i] - old_value) / n
-                self.ucbs[i, price_idx] = self.values[i, price_idx] + 1
-            else:
-                self.values[i, price_idx] = self.values[i, price_idx] * (n-1) / n + (rewards[i] - old_value) / n
-                # self.values[i, price_idx] += (rewards[i] - old_value) / n
-                self.ucbs[i, price_idx] = self.values[i, price_idx] + \
-                    np.sqrt(2 * np.log(self.total_steps) / n)
+
+            self.values[i, price_idx] = self.values[i, price_idx] * (n-1) / n + (rewards[i] - old_value) / n
+            # self.values[i, price_idx] += (rewards[i] - old_value) / n
+            self.ucbs[i, price_idx] = self.values[i, price_idx] + \
+                np.sqrt(2 * np.log(self.T) / n)
+
+            #     self.values[i, price_idx] += (rewards[i] - old_value) / n
+            #     self.ucbs[i, price_idx] = self.values[i, price_idx] + \
+            #         np.sqrt(2 * np.log(self.total_steps) / n)
+            
             if self.verbose:
                 print(f"Updated UCB for product {i}, price index {price_idx}: "
                       f"count={self.counts[i, price_idx]}, "
