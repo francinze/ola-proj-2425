@@ -23,7 +23,7 @@ class Seller:
         if self.price_grid.ndim == 1:
             self.price_grid = self.price_grid.reshape((len(self.products), -1))
         self.B = setting.B  # Production capacity
-        self.inv_rule: str = setting.inventory_constraint
+        self.inv_rule: str = setting.budget_constraint
         self.setting = setting
         self.verbose = setting.verbose == 'all' or setting.verbose == 'seller'
 
@@ -34,6 +34,13 @@ class Seller:
         self.T = setting.T  # Total number of rounds
         if self.T is None:
             self.T = np.random.randint(99, 100)
+
+        # Primal dual params
+        self.cost = np.zeros((self.T, 1))
+        self.cost_coeff = 0.5
+        self.eta = 0.1  # Learning rate for primal-dual updates
+        self.lambda_pd = np.zeros((self.T,1))
+        self.rho_pd = self.B/self.T  # Step size for primal-dual updates
 
         # UCB1 stats for each product and price
         self.counts = np.zeros((self.num_products, self.num_prices))
@@ -60,9 +67,12 @@ class Seller:
             np.arange(self.num_products), chosen_indices
         ]
         self.history_chosen_prices.append(chosen_indices)
+
+        self.cost[self.total_steps] = np.sum(chosen_prices)*self.cost_coeff
+
         return np.array(chosen_prices)
 
-    def update_ucb(self, actions, rewards):
+    def update_primal_dual(self, actions, rewards):
         """
         Update UCB statistics for all products in a single call.
         :param actions: ndarray of shape (num_products,)
@@ -71,6 +81,12 @@ class Seller:
             with rewards for each product.
         """
         self.total_steps += 1
+
+
+        self.lambda_pd[self.total_steps] = self.update_lambda(self.lambda_pd[self.total_steps - 1], self.eta)
+
+        self.B -= self.cost[self.total_steps - 1]  # Update production capacity
+
         for i, price_idx in enumerate(actions):
             self.counts[i, price_idx] += 1
             # Incremental mean update
@@ -93,6 +109,16 @@ class Seller:
 
         self.history_rewards.append(np.sum(rewards))
 
+    def update_lambda(self, lambda_prev, eta):
+        """
+        Update the dual variable lambda.
+        :return: Updated lambda value.
+        """
+        
+        lambda_raw = lambda_prev - eta*(self.rho_pd - self.cost[self.total_steps])
+
+        return np.min(np.max(lambda_raw, 0), self.T/self.B)
+
     def inventory_constraint(
         self, purchases: np.ndarray[float, Any]
     ) -> np.ndarray[float, Any]:
@@ -103,6 +129,47 @@ class Seller:
         purchases = np.array(purchases, dtype=float)
         total_purchases = np.count_nonzero(purchases)
         exceeding_capacity = max(0, total_purchases - self.B)
+        if self.inv_rule == "lax" and exceeding_capacity > 0:
+            if self.verbose:
+                print(
+                    "Warning: Purchases exceed production capacity by "
+                    f"{exceeding_capacity}."
+                )
+            # Set to 0 enough purchases (randomly)
+            # until total does not exceed capacity
+            if total_purchases > self.B:
+                indices = np.where(purchases > 0)[0]
+                np.random.shuffle(indices)
+                running_total = total_purchases
+                for idx in indices:
+                    if running_total <= self.B:
+                        break
+                    running_total -= 1
+                    purchases[idx] = 0
+        elif self.inv_rule == "strict" and exceeding_capacity > 0:
+            if self.verbose:
+                print(
+                    "Error: Purchases exceed production capacity by "
+                    f"{exceeding_capacity}."
+                )
+            # Return all zeros, keeping the same length
+            purchases = np.zeros_like(purchases)
+        if self.verbose:
+            print(
+                f"Purchases after inventory constraint: {purchases}"
+            )
+        return purchases  # No constraint violation
+    
+    def budget_constraint(
+        self, purchases: np.ndarray[float, Any]
+    ) -> np.ndarray[float, Any]:
+        """
+        Check if the purchases exceed the budget.
+        :param purchases: A list of purchases.
+        """
+        purchases = np.array(purchases, dtype=float)
+        total_purchases = np.count_nonzero(purchases)
+        exceeding_capacity = max(0, np.sum(self.price_grid[:,-1])*self.cost_coeff - self.B )
         if self.inv_rule == "lax" and exceeding_capacity > 0:
             if self.verbose:
                 print(
@@ -152,15 +219,16 @@ class Seller:
         except Exception as e:
             print(f"Error in pull_arm: {e}")
 
-    def update(self, rewards, actions):
+    def update(self, purchased, actions):
         """
         Update statistics after observing rewards.
         :param rewards: ndarray of rewards per product
         :param actions: ndarray of chosen price indices per product
         """
         # Optionally clip rewards to [0, 1] or another reasonable range
-        rewards = np.clip(rewards, 0, 1)
-        self.update_ucb(actions, rewards)
+        purchased = np.clip(purchased, 0, 1)
+        rewards = purchased - self.cost[self.total_steps]
+        self.update_primal_dual(actions, rewards)
 
     def reset(self, setting):
         """

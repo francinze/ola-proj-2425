@@ -8,7 +8,7 @@ class Buyer:
     """
     Buyer class for the simulation of a market.
     """
-    def __init__(self, name: str, setting: Setting, dist_params: np.ndarray[float, Any]):
+    def __init__(self, name: str, setting: Setting, dist_params: np.ndarray[float, Any] = None):
         
         self.name = name
         self.setting = setting
@@ -18,46 +18,47 @@ class Buyer:
         self.dist_params = dist_params  # Parameters for the valuation distribution
 
         if setting.distribution == "uniform":
-            high = self.dist_params[0] if len(self.dist_params) > 0 else 1
-            low = self.dist_params[1] if len(self.dist_params) > 1 else 0
+            high = self.dist_params[0] if self.dist_params != None and len(self.dist_params) > 0 else 1
+            low = self.dist_params[1] if self.dist_params != None and len(self.dist_params) > 1 else 0
             self.valuations = np.random.uniform(
                 low=low, high=high, size=setting.n_products
             )
         elif setting.distribution == "bernoulli":
-            n = self.dist_params[0][0] if len(self.dist_params) > 0 > 0 else 1
-            p = self.dist_params[1] if len(self.dist_params) > 1 else 0.5
+            n = self.dist_params[0][0] if self.dist_params != None and len(self.dist_params) > 0 > 0 else 1
+            p = self.dist_params[1] if self.dist_params != None and len(self.dist_params) > 1 else 0.5
             self.valuations = np.random.binomial(
                 n=n, p=p, size=setting.n_products
             )
         elif setting.distribution == "gaussian":
-            loc = self.dist_params[0] if len(self.dist_params) > 0 else 0.5
-            scale = self.dist_params[1] if len(self.dist_params) > 1 else 0.2
+            loc = self.dist_params[0] if self.dist_params != None and len(self.dist_params) > 0 else 0.5
+            scale = self.dist_params[1] if self.dist_params != None and len(self.dist_params) > 1 else 0.2
             self.valuations = np.random.normal(
                 loc=loc, scale=scale, size=setting.n_products
             )
             self.valuations = np.clip(self.valuations, 0, 1)
         elif setting.distribution == "exponential":
             # mean=0.5, scale=0.5, clipped to [0,1]
-            scale = self.dist_params[0] if len(self.dist_params) > 0 else 0.5
+            mean = self.dist_params[0] if self.dist_params != None and len(self.dist_params) > 0 else 0.5
+            scale = self.dist_params[1] if self.dist_params != None and len(self.dist_params) > 1 else 0.5
             self.valuations = np.clip(
-                np.random.exponential(scale=scale, size=setting.n_products), 0, 1
+                np.random.exponential(mean=mean, scale=scale, size=setting.n_products), 0, 1
             )
         elif setting.distribution == "beta":
             # Beta(2,5) is skewed toward 0, Beta(5,2) toward 1
-            a = self.dist_params[0] if len(self.dist_params) > 0 else 2
-            b = self.dist_params[1] if len(self.dist_params) > 1 else 5
+            a = self.dist_params[0] if self.dist_params != None and len(self.dist_params) > 0 else 2
+            b = self.dist_params[1] if self.dist_params != None and len(self.dist_params) > 1 else 5
             self.valuations = np.random.beta(a=a, b=b, size=setting.n_products)
         elif setting.distribution == "lognormal":
             # lognormal with mean ~0.5, clipped to [0,1]
-            mean = self.dist_params[0] if len(self.dist_params) > 0 else -0.7
-            sigma = self.dist_params[1] if len(self.dist_params) > 1 else 0.5
+            mean = self.dist_params[0] if self.dist_params != None and len(self.dist_params) > 0 else -0.7
+            sigma = self.dist_params[1] if self.dist_params != None and len(self.dist_params) > 1 else 0.5
             self.valuations = np.clip(np.random.lognormal(
                 mean=mean, sigma=sigma, size=setting.n_products
             ), 0, 1)
         elif setting.distribution == "test":
             # set valuations in a fixed range for testing purposes
-            high = self.dist_params[:,0] if len(self.dist_params) > 0 else np.linspace(0.2, 1, setting.n_products)
-            low = self.dist_params[:,1] if len(self.dist_params) > 1 else np.linspace(0, 0.8, setting.n_products)
+            high = self.dist_params[:,0] if self.dist_params != None and len(self.dist_params) > 0 else np.linspace(0.2, 1, setting.n_products)
+            low = self.dist_params[:,1] if self.dist_params != None and len(self.dist_params) > 1 else np.linspace(0, 0.8, setting.n_products)
             v = np.zeros(setting.n_products)
             for i in range(setting.n_products):
                 v[i] = np.random.uniform(
@@ -66,7 +67,7 @@ class Buyer:
             self.valuations = np.clip(v, 0, 1)
         elif setting.distribution == "constant":
             # All valuations are the same constant value
-            v = self.dist_params if len(self.dist_params) > 0 else np.linspace(0.1, 1, setting.n_products)
+            v = self.dist_params if self.dist_params != None and len(self.dist_params) > 0 else np.linspace(0.1, 1, setting.n_products)
             self.valuations = np.clip(v, 0, 1)
         else:
             raise ValueError(f"Unknown distribution: {setting.distribution}")

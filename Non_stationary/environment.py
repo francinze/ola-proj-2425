@@ -53,8 +53,11 @@ class Environment:
             self.seller.history_chosen_prices.append(chosen_indices)
             self.prices[self.t] = chosen_prices
 
-            if self.setting.non_stationary:
-                dist_params = (self.setting.dist_params[0][self.t], self.setting.dist_params[1][self.t, :])
+            if self.setting.non_stationary == 'slightly' or self.setting.non_stationary == 'highly' or self.setting.non_stationary == 'manual':
+                if len(self.setting.dist_params) == 2:
+                    dist_params = (self.setting.dist_params[0][self.t], self.setting.dist_params[1][self.t, :])
+                else:
+                    dist_params = self.setting.dist_params[self.t, :]
             else:
                 dist_params = self.setting.dist_params
 
@@ -64,7 +67,7 @@ class Environment:
                 dist_params=dist_params
             )
             demand = self.buyer.yield_demand(chosen_prices)
-            purchased = self.seller.inventory_constraint(demand)
+            purchased = self.seller.budget_constraint(demand)
 
             # Update UCBs after this round
             self.ucb_history[self.t] = self.seller.ucbs.copy()

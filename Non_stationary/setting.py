@@ -13,30 +13,46 @@ class Setting:
         epsilon: float = 0.1,
         B: int = None,
         distribution: str = "uniform",
-        inventory_constraint: str = "lax",
+        budget_constraint: str = "lax",
         verbose: str = 'all',
-        non_stationary: bool = False,
+        non_stationary: str = 'no',
         dist_params: float = (0.1, 0.9)
     ):
         self.T = T
         self.n_products = n_products
+        self.cost_coeff = 0.5
         if B is None:
-            B = np.random.randint(1, self.n_products)
+            prices = np.linspace(0.1, 1.0, int(1 / epsilon))
+            mean_cost = np.mean(prices)
+            B = self.T/self.n_products * self.cost_coeff * mean_cost
         self.B = B  # Production capacity
         self.distribution = distribution  # Distribution type
-        self.inventory_constraint = inventory_constraint
+        self.budget_constraint = budget_constraint
         self.verbose = verbose
         self.epsilon = epsilon
         self.non_stationary = non_stationary
-        self.dist_params = self.create_non_stationary_params() if self.non_stationary else dist_params
+        self.dist_params = self.create_params(dist_params)
 
-    def create_non_stationary_params(self):
+    def create_params(self, dist_params):
         """
-        Create non-stationary parameters for the simulation.
+        Create stationary or non-stationary parameters for the simulation.
         """
 
-        # Decide how often we switch the distribution
-        switch_num = np.random.randint(low=1, high=5, size=self.n_products)
+        if self.non_stationary == 'slightly':
+            # Decide how often we switch the distribution
+            high_switch_slightly = np.log(self.T)/2
+            switch_num = np.random.randint(low=1, high=high_switch_slightly.astype(int), size=self.n_products)
+
+        elif self.non_stationary == 'highly':
+            # Decide how often we switch the distribution
+            low_switch_highly = np.log(self.T)
+            high_switch_highly = np.log(self.T)*2
+            switch_num = np.random.randint(low=low_switch_highly.astype(int), high=high_switch_highly.astype(int), size=self.n_products)
+
+        else:
+            return dist_params  # Return the provided parameters for stationary case
+        
+
         # Decide when to switch
         switch_times = np.zeros((np.max(switch_num) + 2, self.n_products))
         for i in range(self.n_products):
@@ -49,6 +65,7 @@ class Setting:
             # Fill the rest with T
             for j in range(switch_num[i] + 1, switch_times.shape[0]):
                 switch_times[j, i] = self.T
+
 
         if self.distribution == "uniform":
             # Create high and low limit vectors
@@ -68,7 +85,6 @@ class Setting:
 
             params = (high, low)
 
-
         elif self.distribution == "bernoulli":
             # Create mean values vector
             mu = np.zeros((self.T, self.n_products))
@@ -82,6 +98,7 @@ class Setting:
                     mu[switch_times[j, i].astype(int):switch_times[j + 1, i].astype(int), i] = mu_temp[j]
 
             params = (np.ones((self.T, 1)), mu)
+
         elif self.distribution == "gaussian":
             # Create mean value and standard deviation vectors
             mu = np.zeros((self.T, self.n_products))
@@ -101,6 +118,7 @@ class Setting:
                     sigma[switch_times[j, i].astype(int):switch_times[j + 1, i].astype(int), i] = sigma_temp[j]
 
             params = (mu, sigma)
+
         elif self.distribution == "exponential":
             params = 0
         elif self.distribution == "beta":
@@ -110,9 +128,20 @@ class Setting:
         elif self.distribution == "test":
             params = 0
         elif self.distribution == "constant":
-            params = 0
+            # Create mean value and standard deviation vectors
+            mu = np.zeros((self.T, self.n_products))
+            for i in range(self.n_products):
+                # Create a random sequence of values
+                mu_temp = np.random.uniform(
+                    low=0, high=1, size=switch_num[i] + 1
+                )
+
+                for j in range(0, switch_num[i] + 1):
+                    mu[switch_times[j, i].astype(int):switch_times[j + 1, i].astype(int), i] = mu_temp[j]
+
+            params = mu
+
         else:
             raise ValueError(f"Unknown distribution: {self.distribution}")
             params = 0
-            
         return params
