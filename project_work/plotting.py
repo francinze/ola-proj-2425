@@ -191,3 +191,68 @@ def plot_ucb_product0_by_distribution(ucb_dict):
     plt.legend()
     plt.grid()
     plt.show()
+
+
+def plot_environment_results(environment):
+    """
+    Plot all results from an Environment instance after a single
+    simulation run.
+
+    Args:
+        environment: Environment instance after running play_all_rounds()
+    """
+    # Check if the environment has the necessary data
+    if (not hasattr(environment, 'optimal_rewards') or
+            not hasattr(environment, 'regrets')):
+        print("Warning: Environment does not have simulation results to plot")
+        return
+
+    # Plot results from a single simulation run
+    plot_all(
+        environment.seller,
+        environment.optimal_rewards,
+        environment.regrets,
+        getattr(environment, 'ucb_history', None)
+    )
+
+
+def plot_environment_simulation_results(environment, regrets_dict, ucb_dict,
+                                        n_trials):
+    """
+    Plot results from Environment.run_simulation() with multiple trials.
+
+    Args:
+        environment: Environment instance used for simulation
+        regrets_dict: Dictionary of regrets by distribution
+                     {dist: [n_trials, T]}
+        ucb_dict: Dictionary of UCB data by distribution
+                 {dist: [n_trials, T, n_prices]}
+        n_trials: Number of trials run
+    """
+    # Plot cumulative regret comparison across distributions
+    plot_cumulative_regret_by_distribution(
+        environment.setting.T,
+        regrets_dict,
+        n_trials
+    )
+
+    # Plot UCB comparison across distributions
+    # Convert UCB dict to averaged format expected by plot function
+    avg_ucb_dict = {}
+    for dist, ucb_data in ucb_dict.items():
+        if len(ucb_data) > 0:
+            # Average across trials
+            avg_ucb = ucb_data.mean(axis=0)
+            # Make sure we have the right shape for product 0
+            if avg_ucb.ndim == 3:
+                # Shape is [T, n_products, n_prices] - take product 0
+                avg_ucb_dict[dist] = avg_ucb[:, 0, :]
+            elif avg_ucb.ndim == 2:
+                # Shape is already [T, n_prices] for product 0
+                avg_ucb_dict[dist] = avg_ucb
+            else:
+                print(f"Warning: Unexpected UCB shape for {dist}: "
+                      f"{avg_ucb.shape}")
+
+    if avg_ucb_dict:
+        plot_ucb_product0_by_distribution(avg_ucb_dict)

@@ -1,11 +1,9 @@
 from .seller import Seller
 from .buyer import Buyer
 from .setting import Setting
+from .logger import (log_environment, log_simulation, log_error,
+                     configure_logging)
 import numpy as np
-from plotting import (
-    plot_all, plot_cumulative_regret_by_distribution,
-    plot_ucb_product0_by_distribution
-)
 
 
 class Environment:
@@ -21,6 +19,8 @@ class Environment:
         self.t = 0
         self.distribution = setting.distribution
         self.seller = Seller(setting)
+        # Configure logging based on verbose setting
+        configure_logging(setting.verbose)
         # Collect log of results
         self.reset()
 
@@ -49,13 +49,17 @@ class Environment:
         try:
             actions = self.seller.pull_arm()
             chosen_prices = self.seller.yield_prices(actions)
-            chosen_indices = actions
-            self.seller.history_chosen_prices.append(chosen_indices)
+            # Note: history_chosen_prices is already updated in pull_arm()
             self.prices[self.t] = chosen_prices
 
-            if self.setting.non_stationary == 'slightly' or self.setting.non_stationary == 'highly' or self.setting.non_stationary == 'manual':
+            if (self.setting.non_stationary == 'slightly' or
+                    self.setting.non_stationary == 'highly' or
+                    self.setting.non_stationary == 'manual'):
                 if len(self.setting.dist_params) == 2:
-                    dist_params = (self.setting.dist_params[0][self.t], self.setting.dist_params[1][self.t, :])
+                    dist_params = (
+                        self.setting.dist_params[0][self.t],
+                        self.setting.dist_params[1][self.t, :]
+                    )
                 else:
                     dist_params = self.setting.dist_params[self.t, :]
             else:
@@ -85,7 +89,9 @@ class Environment:
 
             self.t += 1
         except Exception as e:
-            print(f"Error in round {self.t}: {e}")
+            log_error(f"Error in round {self.t}: {e}")
+            # Ensure t increments even on error to avoid infinite loops
+            self.t += 1
 
     def compute_optimal_reward(self, valuations):
         """
@@ -105,44 +111,45 @@ class Environment:
             # else: buyer would not buy at any price, reward is 0
         return total
 
-    def play_all_rounds(self, plot=True) -> None:
+    def play_all_rounds(self) -> None:
         '''Play all rounds of the simulation.'''
         for _ in range(self.setting.T):
             self.round()
-        if self.setting.verbose == 'all':
-            print("Simulation finished.")
-            print(f"Final prices: {self.prices[self.t - 1]}")
-            print(f"Purchases: {self.purchases[self.t - 1]}")
-        if plot:
-            plot_all(
-                self.seller, self.optimal_rewards,
-                self.regrets, self.ucb_history
-            )
+        log_environment("Simulation finished.")
+        if self.t > 0:
+            log_environment(f"Final prices: {self.prices[self.t - 1]}")
+            log_environment(f"Purchases: {self.purchases[self.t - 1]}")
 
     def run_simulation(self, n_trials=20, distributions=[
         'uniform', 'gaussian', 'exponential', 'lognormal',
         'bernoulli', 'beta'
     ]):
         """
-        Run the simulation for a given number of trials
-        and plot the cumulative regret.
+        Run the simulation for a given number of trials.
+        Returns dictionaries containing regret and UCB data for analysis.
         """
         # Initialize dictionaries to collect data
         regrets_dict = {dist: [] for dist in distributions}
         ucb_dict = {dist: [] for dist in distributions}
-        self.setting.verbose = None
+        # Temporarily disable logging for batch simulation
+        configure_logging(None)
 
         for trial in range(n_trials):
             self.reset()
             dist = distributions[trial % len(distributions)]
             self.setting.distribution = dist
-            self.play_all_rounds(plot=False)
+            self.play_all_rounds()
 
             # --- Compute regret using optimal rewards ---
             rewards = np.array(self.seller.history_rewards)
+            if len(rewards) == 0:
+                continue  # Skip if no rewards recorded
             if rewards.ndim > 1:
                 rewards = rewards.sum(axis=1)
             optimal_rewards = np.array(self.optimal_rewards)
+            if (len(optimal_rewards) == 0 or
+                    len(rewards) != len(optimal_rewards)):
+                continue  # Skip if shapes don't match
             regret_per_round = optimal_rewards - rewards
             cumulative_regret = np.cumsum(regret_per_round)
             regrets_dict[dist].append(cumulative_regret)
@@ -154,25 +161,12 @@ class Environment:
                     ucb_product0.append(self.seller.ucbs[0].copy())
             ucb_dict[dist].append(np.array(ucb_product0))
 
-            if self.setting.verbose == 'all':
-                print(f"Trial {trial + 1} finished.")
+            log_simulation(f"Trial {trial + 1} finished.")
 
-        plot_all(self.seller, self.ucb_history)
-
-        # Convert lists to arrays
+        # Convert lists to arrays for return
         for dist in distributions:
             regrets_dict[dist] = np.array(regrets_dict[dist])
             ucb_dict[dist] = np.array(ucb_dict[dist])
 
-        # For UCB plot, average over trials
-        avg_ucb_dict = {}
-        for dist in distributions:
-            # Average over trials: shape (T, n_prices)
-            avg_ucb_dict[dist] = ucb_dict[dist].mean(axis=0)
-
-        plot_cumulative_regret_by_distribution(
-            self.setting.T,
-            regrets_dict,
-            n_trials
-        )
-        plot_ucb_product0_by_distribution(avg_ucb_dict)
+        # Return data for optional plotting by external functions
+        return regrets_dict, ucb_dict
