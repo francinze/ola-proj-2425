@@ -108,9 +108,10 @@ class TestSeller:
         lambda_prev = 0.5
         eta = 0.1
         seller.total_steps = 0
-        seller.cost[0] = 2.0
+        current_cost = 2.0
+        seller.cost[0] = current_cost
 
-        new_lambda = seller.update_lambda(lambda_prev, eta)
+        new_lambda = seller.update_lambda(lambda_prev, eta, current_cost)
 
         # Lambda should be clipped between 0 and T/B
         assert 0 <= new_lambda <= seller.T / seller.B
@@ -120,14 +121,15 @@ class TestSeller:
         setting = Setting(n_products=1, T=10, B=5)
         seller = Seller(setting)
         seller.total_steps = 0
-        seller.cost[0] = 1.0
+        current_cost = 1.0
+        seller.cost[0] = current_cost
 
         # Test lower bound
-        lambda_low = seller.update_lambda(-10, 0.1)
+        lambda_low = seller.update_lambda(-10, 0.1, current_cost)
         assert lambda_low >= 0
 
         # Test upper bound
-        lambda_high = seller.update_lambda(100, 0.1)
+        lambda_high = seller.update_lambda(100, 0.1, current_cost)
         assert lambda_high <= seller.T / seller.B
 
     def test_update_primal_dual(self):
@@ -142,7 +144,8 @@ class TestSeller:
         seller.update_primal_dual(actions, rewards)
 
         assert seller.total_steps == 1
-        assert seller.B < initial_B  # B should decrease
+        # FIXED: B should remain constant in our corrected implementation
+        assert seller.B == initial_B  # B should not change
         assert seller.counts[0, 0] == 1
         assert seller.counts[1, 1] == 1
         assert len(seller.history_rewards) == 1
@@ -166,8 +169,10 @@ class TestSeller:
         assert seller.counts[0, 0] == 2
         assert seller.counts[1, 1] == 2
 
-        # Test incremental mean update
-        expected_value_0_0 = (0.2 + 0.4) / 2
+        # Test incremental mean update - now using price-weighted rewards
+        # Price grid with epsilon=0.5: [0.1, 1.0]
+        # For action 0: price = 0.1, price-weighted rewards = 0.1 * [0.2, 0.4]
+        expected_value_0_0 = (0.1 * 0.2 + 0.1 * 0.4) / 2  # 0.03
         assert abs(seller.values[0, 0] - expected_value_0_0) < 1e-10
 
     def test_inventory_constraint_lax_exceeding(self):
@@ -380,8 +385,11 @@ class TestSeller:
 
         seller.update_primal_dual(actions, rewards)
 
-        # Check UCB formula: value + sqrt(2 * log(T) / n)
-        expected_ucb = 0.5 + np.sqrt(2 * np.log(100) / 1)
+        # Price grid with epsilon=1.0: [0.1] (only one price)
+        # Price-weighted reward = 0.1 * 0.5 = 0.05
+        expected_value = 0.1 * 0.5  # 0.05
+        expected_ucb = expected_value + np.sqrt(
+            2 * np.log(seller.total_steps) / 1)
         assert abs(seller.ucbs[0, 0] - expected_ucb) < 1e-10
 
     def test_cost_calculation(self):
@@ -425,7 +433,7 @@ class TestSeller:
             assert new_lambda_value < initial_lambda_value
 
     def test_b_decrease_in_primal_dual(self):
-        """Test that B decreases correctly in update_primal_dual."""
+        """Test that B remains constant in our corrected primal_dual."""
         setting = Setting(n_products=1, B=10)
         seller = Seller(setting)
 
@@ -438,7 +446,8 @@ class TestSeller:
 
         seller.update_primal_dual(actions, rewards)
 
-        assert seller.B == initial_B - seller.cost[0]
+        # FIXED: B should remain constant in our corrected implementation
+        assert seller.B == initial_B
 
     def test_incremental_mean_calculation(self):
         """Test incremental mean calculation in update_primal_dual."""
@@ -454,12 +463,17 @@ class TestSeller:
         rewards2 = np.array([0.8])
         seller.update_primal_dual(actions, rewards2)
 
-        # Mean should be (0.2 + 0.8) / 2 = 0.5
-        expected_mean = 0.5
+        # Calculate expected price-weighted rewards
+        chosen_price = seller.price_grid[0, 0]  # First price for product 0
+        price_weighted_1 = chosen_price * rewards1[0]
+        price_weighted_2 = chosen_price * rewards2[0]
+        
+        # Mean should be (price_weighted_1 + price_weighted_2) / 2
+        expected_mean = (price_weighted_1 + price_weighted_2) / 2
         assert abs(seller.values[0, 0] - expected_mean) < 1e-10
 
     def test_history_tracking(self):
-        """Test that history is tracked correctly."""
+        """Test that history is tracked correctly with price-weighted."""
         setting = Setting(n_products=2, epsilon=0.5)
         seller = Seller(setting)
 
@@ -474,8 +488,16 @@ class TestSeller:
         seller.update_primal_dual(actions2, rewards2)
 
         assert len(seller.history_rewards) == 2
-        assert seller.history_rewards[0] == np.sum(rewards1)
-        assert seller.history_rewards[1] == np.sum(rewards2)
+        
+        # Calculate expected price-weighted rewards
+        chosen_prices1 = seller.price_grid[np.arange(2), actions1.astype(int)]
+        expected_reward1 = np.sum(chosen_prices1 * rewards1)
+        
+        chosen_prices2 = seller.price_grid[np.arange(2), actions2.astype(int)]
+        expected_reward2 = np.sum(chosen_prices2 * rewards2)
+        
+        assert abs(seller.history_rewards[0] - expected_reward1) < 1e-10
+        assert abs(seller.history_rewards[1] - expected_reward2) < 1e-10
 
     def test_integer_conversion_in_pull_arm(self):
         """Test integer conversion in pull_arm method."""

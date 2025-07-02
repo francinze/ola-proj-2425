@@ -121,18 +121,23 @@ class Buyer:
     def yield_demand(self, prices: np.ndarray[float, Any]) -> List[float]:
         """
         Calculate demand based on prices and valuations.
-        Returns 1 if price < valuation, 0 otherwise.
+
+        Project Requirement: "Buys all products priced below their respective
+        valuations". This implements binary purchasing behavior as specified
+        in the project requirements.
+
+        Returns: Binary demand (1.0 if price < valuation, 0.0 otherwise)
         """
         demand = []
         log_buyer_demand(self.name, prices, "calculating demand")
 
         for i in range(len(prices)):
             if prices[i] is not None and self.valuations[i] is not None:
-                # demand is 1 if the price is < valuation, 0 otherwise
+                # Binary demand model as per project requirements
                 if prices[i] < self.valuations[i]:
-                    demand.append(1)
+                    demand.append(1.0)  # Buy the product
                 else:
-                    demand.append(0)
+                    demand.append(0.0)  # Don't buy the product
             else:
                 log_error(f"{self.name} encountered None value - "
                           f"price[{i}]: {prices[i]}, "

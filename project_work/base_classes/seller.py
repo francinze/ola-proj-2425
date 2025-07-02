@@ -89,6 +89,13 @@ class Seller:
             with rewards for each product.
         """
         self.total_steps += 1
+
+        # Calculate price-weighted rewards (price × purchase)
+        chosen_prices = self.price_grid[
+            np.arange(self.num_products), actions.astype(int)
+        ]
+        price_weighted_rewards = chosen_prices * rewards
+
         for i, price_idx in enumerate(actions):
             price_idx = int(price_idx)  # Ensure price_idx is an integer
             self.counts[i, price_idx] += 1
@@ -96,17 +103,20 @@ class Seller:
             n = self.counts[i, price_idx]
             old_value = self.values[i, price_idx]
 
-            # UCB1 update formula
+            # UCB1 update formula - FIXED: use current time step, not horizon
+            # Use price-weighted reward for update
+            reward_i = price_weighted_rewards[i]
             self.values[i, price_idx] = (old_value * (n-1) / n +
-                                         (rewards[i] - old_value) / n)
+                                         (reward_i - old_value) / n)
             self.ucbs[i, price_idx] = self.values[i, price_idx] + \
-                np.sqrt(2 * np.log(self.T) / n)
+                np.sqrt(2 * np.log(self.total_steps) / n)
 
             log_ucb1_update(i, price_idx, self.counts[i, price_idx],
                             self.values[i, price_idx],
                             self.ucbs[i, price_idx])
 
-        self.history_rewards.append(np.sum(rewards))
+        # Store price-weighted rewards in history
+        self.history_rewards.append(np.sum(price_weighted_rewards))
 
     def update_primal_dual(self, actions, rewards):
         """
@@ -116,22 +126,29 @@ class Seller:
         :param rewards: ndarray of shape (num_products,)
             with rewards for each product.
         """
-        # Calculate cost for current step before updating lambda
+        # Calculate price-weighted rewards (price × purchase)
         chosen_prices = self.price_grid[
             np.arange(self.num_products), actions.astype(int)
         ]
-        self.cost[self.total_steps] = np.sum(chosen_prices) * self.cost_coeff
+        price_weighted_rewards = chosen_prices * rewards
+
+        # Calculate cost for current step before updating lambda
+        current_cost = np.sum(chosen_prices) * self.cost_coeff
+        self.cost[self.total_steps] = current_cost
 
         # Update lambda for next step if not at final step
         if self.total_steps < self.T - 1:
             self.lambda_pd[self.total_steps + 1] = self.update_lambda(
-                self.lambda_pd[self.total_steps], self.eta)
+                self.lambda_pd[self.total_steps], self.eta, current_cost)
 
-        # Update production capacity
-        self.B -= float(self.cost[self.total_steps].item())
+        # FIXED: Don't modify budget B - it should remain constant
+        # The budget constraint is handled in budget_constraint method
 
         log_primal_dual_update(self.lambda_pd[self.total_steps].item(),
                                self.cost[self.total_steps].item(), self.B)
+
+        # Store price-weighted rewards in history
+        self.history_rewards.append(np.sum(price_weighted_rewards))
 
         self.total_steps += 1
 
@@ -141,14 +158,12 @@ class Seller:
             # Incremental mean update
             n = self.counts[i, price_idx]
             old_value = self.values[i, price_idx]
+            reward_i = price_weighted_rewards[i]
             self.values[i, price_idx] = (old_value +
-                                         (rewards[i] - old_value) / n)
+                                         (reward_i - old_value) / n)
+            # FIXED: Use current time step for UCB calculation
             self.ucbs[i, price_idx] = self.values[i, price_idx] + \
-                np.sqrt(2 * np.log(self.T) / n)
-
-            #     self.values[i, price_idx] += (rewards[i] - old_value) / n
-            # self.ucbs[i, price_idx] = self.values[i, price_idx] + \
-            #     np.sqrt(2 * np.log(self.total_steps) / n)
+                np.sqrt(2 * np.log(self.total_steps) / n)
 
             log_seller(f"Updated UCB for product {i}, "
                        f"price index {price_idx}: "
@@ -156,16 +171,19 @@ class Seller:
                        f"value={self.values[i, price_idx]}, "
                        f"UCB={self.ucbs[i, price_idx]}")
 
-        self.history_rewards.append(np.sum(rewards))
+        # Note: history_rewards already appended above with price-weighted
 
-    def update_lambda(self, lambda_prev, eta):
+    def update_lambda(self, lambda_prev, eta, current_cost):
         """
         Update the dual variable lambda.
+        :param lambda_prev: Previous lambda value
+        :param eta: Learning rate
+        :param current_cost: Cost for current time step
         :return: Updated lambda value.
         """
-
+        # FIXED: Proper primal-dual update using cost vs budget constraint
         lambda_raw = (
-            lambda_prev - eta * (self.rho_pd - self.cost[self.total_steps])
+            lambda_prev + eta * (current_cost - self.rho_pd)
         )
 
         return np.minimum(np.maximum(lambda_raw, 0), self.T/self.B)
@@ -217,9 +235,8 @@ class Seller:
         """
         purchases = np.array(purchases, dtype=float)
         total_purchases = np.count_nonzero(purchases)
-        exceeding_capacity = max(
-            0, np.sum(self.price_grid[:, -1])*self.cost_coeff - self.B
-        )
+        # FIXED: Check actual purchases against budget, not max prices
+        exceeding_capacity = max(0, total_purchases - self.B)
         if self.inv_rule == "lax" and exceeding_capacity > 0:
             log_seller(
                 "Warning: Purchases exceed production capacity by "
@@ -295,8 +312,9 @@ class Seller:
             rewards = purchased
             self.update_ucb1(actions, rewards)
         elif self.algorithm == "primal_dual":
-            # For primal-dual, subtract costs from purchases
-            rewards = purchased - self.cost[self.total_steps]
+            # FIXED: For primal-dual, rewards are just purchases
+            # Cost constraint is handled via lambda in arm selection
+            rewards = purchased
             self.update_primal_dual(actions, rewards)
         else:
             log_error(f"Unknown algorithm in update: {self.algorithm}")

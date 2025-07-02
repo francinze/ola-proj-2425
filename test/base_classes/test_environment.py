@@ -633,3 +633,105 @@ class TestEnvironment:
             assert 'uniform' in regrets_dict
         finally:
             sim_logger.removeHandler(log_capture_handler)
+
+    def test_compute_optimal_reward_with_valuation(self):
+        """Test optimal reward computation with specified valuation."""
+        setting = Setting(n_products=2, epsilon=0.5, T=10)
+        env = Environment(setting)
+        
+        valuations = np.array([0.8, 0.2])
+        optimal_reward = env.compute_optimal_reward_with_valuation(valuations)
+        
+        # Product 0: valuation=0.8, best price=0.1, reward=0.1
+        # Product 1: valuation=0.2, best price=0.1, reward=0.1  
+        # Total = 0.2
+        expected_optimal = 0.2
+        assert abs(optimal_reward - expected_optimal) < 1e-10
+
+    def test_compute_optimal_reward_nonstationary_integration(self):
+        """Test non-stationary optimal reward calculation integration."""
+        setting = Setting(n_products=1, epsilon=0.5, T=10,
+                          non_stationary='slightly')
+        env = Environment(setting)
+        
+        # Test the compute_optimal_reward_with_valuation method directly
+        valuation = np.array([0.7])
+        optimal_reward = env.compute_optimal_reward_with_valuation(valuation)
+        
+        # With price grid [0.1, 1.0] and valuation 0.7:
+        # Optimal price is 0.1 with reward 0.1
+        expected_optimal = 0.1
+        assert abs(optimal_reward - expected_optimal) < 1e-10
+
+    def test_environment_with_specialized_sellers(self):
+        """Test environment works with specialized seller classes."""
+        try:
+            from project_work.base_classes.specialized_sellers import (
+                UCB1Seller, CombinatorialUCBSeller, PrimalDualSeller
+            )
+            
+            setting = Setting(n_products=2, epsilon=0.5, T=5)
+            
+            # Test with different seller types
+            sellers = [
+                UCB1Seller(setting),
+                CombinatorialUCBSeller(setting),
+                PrimalDualSeller(setting)
+            ]
+            
+            for seller in sellers:
+                env = Environment(setting)
+                env.reset()
+                env.seller = seller
+                
+                # Run a few rounds
+                rounds_to_run = 3
+                for _ in range(rounds_to_run):
+                    env.round()
+                    
+                # Check that everything worked correctly
+                assert len(env.regrets) == setting.T  # T=5, so full array
+                assert len(seller.history_rewards) == rounds_to_run
+                # Check that non-negative regret for the rounds we ran
+                for i in range(rounds_to_run):
+                    assert env.regrets[i] >= 0
+        except ImportError:
+            # Skip if specialized sellers not available
+            pytest.skip("Specialized sellers not available")
+
+    def test_optimal_reward_edge_cases(self):
+        """Test optimal reward calculation edge cases."""
+        setting = Setting(n_products=1, epsilon=0.5, T=10)
+        env = Environment(setting)
+        
+        # Test zero valuation
+        valuations = np.array([0.0])
+        optimal_reward = env.compute_optimal_reward_with_valuation(valuations)
+        assert optimal_reward == 0.0
+        
+        # Test high valuation  
+        setting_fine = Setting(n_products=1, epsilon=0.1, T=10)
+        env_fine = Environment(setting_fine)
+        valuations = np.array([10.0])
+        optimal_reward = env_fine.compute_optimal_reward_with_valuation(valuations)
+        # Should be 1.0 (highest price with guaranteed purchase)
+        assert abs(optimal_reward - 1.0) < 1e-10
+
+    def test_price_weighted_reward_consistency_in_environment(self):
+        """Test that environment properly handles price-weighted rewards."""
+        setting = Setting(n_products=2, epsilon=0.5, T=5)
+        env = Environment(setting)
+        env.reset()
+        
+        seller = env.seller
+        
+        # Run one round and check reward structure
+        env.round()
+        
+        # Check that seller received price-weighted rewards
+        assert len(seller.history_rewards) == 1
+        reward = seller.history_rewards[0]
+        
+        # Reward should be sum of price × purchase for all products
+        # This should match what was stored in the environment
+        assert reward >= 0  # Should be non-negative

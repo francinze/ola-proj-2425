@@ -21,6 +21,8 @@ class Environment:
         self.seller = Seller(setting)
         # Configure logging based on verbose setting
         configure_logging(setting.verbose)
+        # Add valuation history tracking
+        self.valuation_history = []
         # Collect log of results
         self.reset()
 
@@ -70,6 +72,10 @@ class Environment:
                 setting=self.setting,
                 dist_params=dist_params
             )
+
+            # Store buyer's valuation for future reference
+            self.valuation_history.append(self.buyer.valuations.copy())
+
             demand = self.buyer.yield_demand(chosen_prices)
             purchased = self.seller.budget_constraint(demand)
 
@@ -80,7 +86,14 @@ class Environment:
             self.purchases[self.t] = purchased
 
             # --- Compute optimal reward for this round ---
-            optimal_reward = self.compute_optimal_reward(self.buyer.valuations)
+            # Use adaptive optimal calculation for non-stationary environments
+            if self.setting.non_stationary in ['slightly', 'highly']:
+                optimal_reward = self.compute_optimal_reward_nonstationary()
+            else:
+                # Standard optimal calculation
+                optimal_reward = self.compute_optimal_reward(
+                    self.buyer.valuations)
+
             self.optimal_rewards[self.t] = optimal_reward
             self.regrets[self.t] = (
                 optimal_reward - self.seller.history_rewards[-1]
@@ -92,6 +105,35 @@ class Environment:
             log_error(f"Error in round {self.t}: {e}")
             # Ensure t increments even on error to avoid infinite loops
             self.t += 1
+
+    def compute_optimal_reward_nonstationary(self):
+        """
+        Compute the true optimal reward for non-stationary environments.
+        The optimal policy is clairvoyant - it knows the current valuation.
+        """
+        if len(self.valuation_history) == 0:
+            return 0  # No valuations available
+
+        # The optimal reward is the clairvoyant reward for current valuation
+        # This is what a perfect algorithm would achieve if it knew it
+        current_valuation = self.valuation_history[-1]  # Most recent valuation
+        return self.compute_optimal_reward_with_valuation(current_valuation)
+
+    def compute_optimal_reward_with_valuation(self, valuation):
+        """
+        Compute optimal reward for a given valuation.
+        Similar to compute_optimal_reward but with specified valuation.
+        """
+        total = 0
+        for i in range(self.setting.n_products):
+            # Only consider prices <= valuation
+            possible_prices = self.seller.price_grid[i][
+                self.seller.price_grid[i] <= valuation[i]
+            ]
+            if len(possible_prices) > 0:
+                best_price = np.max(possible_prices)
+                total += best_price
+        return total
 
     def compute_optimal_reward(self, valuations):
         """
