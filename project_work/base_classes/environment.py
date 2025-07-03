@@ -81,8 +81,12 @@ class Environment:
 
             purchased = self.buyer.yield_demand(chosen_prices)
 
-            # Update UCBs after this round (if seller has UCBs)
-            if hasattr(self.seller, 'ucbs'):
+            # Update UCBs after this round (only if seller has UCBs)
+            if (hasattr(self.seller, 'ucbs') and
+                self.seller.ucbs is not None and
+                hasattr(self.seller, 'algorithm') and
+                self.seller.algorithm in ['ucb1', 'combinatorial_ucb',
+                                          'sliding_window_ucb']):
                 self.ucb_history[self.t] = self.seller.ucbs.copy()
 
             self.seller.update(purchased, actions)

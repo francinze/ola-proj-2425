@@ -3,99 +3,51 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-def plot_cum_reward(seller):
+def plot_all(seller, optimal_rewards, regrets, ucb_history=None):
     """
-    Plot cumulative reward over time.
+    Plot all relevant learning progress statistics for the seller agent.
+    Only plots UCB if the seller actually uses UCB (UCB1/Combinatorial-UCB).
     """
+    # Check if this seller type should have UCB plots
+    has_ucb = (hasattr(seller, 'ucbs') and
+               seller.ucbs is not None and
+               hasattr(seller, 'algorithm') and
+               seller.algorithm in ['ucb1', 'combinatorial_ucb',
+                                    'sliding_window_ucb'])
+
+    fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+
+    # Top-left: Cumulative reward
     rewards = np.array(seller.history_rewards)
     if rewards.ndim == 1:
         rewards = rewards[:, None]
     cumulative_reward = np.cumsum(rewards.sum(axis=1))
+    axes[0, 0].plot(cumulative_reward, label="Cumulative Reward", color='blue')
+    axes[0, 0].set_xlabel("Step")
+    axes[0, 0].set_ylabel("Cumulative Reward")
+    axes[0, 0].set_title("Cumulative Reward Over Time")
+    axes[0, 0].grid()
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(cumulative_reward, label="Cumulative Reward", color='blue')
-    plt.xlabel("Step")
-    plt.ylabel("Cumulative Reward")
-    plt.title("Cumulative Reward Over Time")
-    plt.grid()
-    plt.show()
-
-
-def plot_heatmap(seller):
-    """
-    Plot heatmap of product-price selection frequency.
-    """
-    plt.figure(figsize=(10, 6))
+    # Top-right: Heatmap
     sns.heatmap(
         seller.counts, annot=True, fmt=".0f", cmap="Blues",
         xticklabels=[f"{p:.2f}" for p in seller.price_grid[0]],
-        yticklabels=range(seller.num_products)
+        yticklabels=range(seller.num_products),
+        ax=axes[0, 1]
     )
-    plt.xlabel("Price")
-    plt.ylabel("Product")
-    plt.title("Selection Frequency (Product vs. Price)")
-    plt.show()
+    axes[0, 1].set_xlabel("Price")
+    axes[0, 1].set_ylabel("Product")
+    axes[0, 1].set_title("Selection Frequency (Product vs. Price)")
 
-
-def plot_ucb(ucb_history):
-    """
-    Plot UCBs of all products over time.
-    UCBs that start at infinity are shown as lines coming from above
-    when they first become finite.
-    """
-    plt.figure(figsize=(10, 6))
-    n_prices = ucb_history.shape[2]
-    ucb_product0 = ucb_history[:, 0, :]
-    for i in range(n_prices):
-        ucb = ucb_product0[:, i]
-        is_finite = np.isfinite(ucb)
-        if np.any(is_finite):
-            first_finite = np.argmax(is_finite)
-            # Plot the finite part
-            plt.plot(
-                np.arange(first_finite, len(ucb)),
-                ucb[first_finite:],
-                label=f"Price {i}"
-            )
-            # If the first value is inf, draw a vertical line from far above
-            if first_finite > 0:
-                y_top = ucb[first_finite] + 2 * (
-                    np.nanmax(ucb[is_finite]) - np.nanmin(ucb[is_finite]) + 1
-                )
-                plt.plot(
-                    [first_finite - 1, first_finite],
-                    [y_top, ucb[first_finite]],
-                    color=plt.gca().lines[-1].get_color(),
-                    linestyle='dashed'
-                )
-    plt.xlim(0, ucb_history.shape[0] - 1)
-    plt.ylim(0, 0.5)
-    plt.xlabel("Step")
-    plt.ylabel("UCB")
-    plt.title("UCBs of Prices for product 0 Over Time")
-    plt.legend()
-    plt.grid()
-    plt.show()
-
-
-def plot_regret(optimal_rewards, regrets):
-    """
-    Plot per-round (non-cumulative) regret over time,
-    showing optimal and actual rewards.
-    The area between the two lines is shaded to represent regret.
-    For long series (>50), apply curve smoothing (same as average reward).
-    """
-    plt.figure(figsize=(10, 6))
+    # Bottom-left: Regret
     x = np.arange(len(optimal_rewards))
     actual_rewards = optimal_rewards - regrets
 
     if len(optimal_rewards) > 50:
-        # Dynamically set window size: 1/10th of series length, at least 10
         window = max(10, len(optimal_rewards) // 10)
         if window % 2 == 0:
-            window += 1  # Ensure window is odd for centering
+            window += 1
 
-        # Smooth both optimal and actual rewards
         smoothed_optimal = np.convolve(
             optimal_rewards, np.ones(window) / window, mode='valid'
         )
@@ -104,15 +56,15 @@ def plot_regret(optimal_rewards, regrets):
         )
         x_smoothed = np.arange(window // 2, len(optimal_rewards) - window // 2)
 
-        plt.plot(
+        axes[1, 0].plot(
             x_smoothed, smoothed_optimal,
             label="Optimal Reward (Smoothed)", color='blue'
         )
-        plt.plot(
+        axes[1, 0].plot(
             x_smoothed, smoothed_actual,
             label="Actual Reward (Smoothed)", color='green'
         )
-        plt.fill_between(
+        axes[1, 0].fill_between(
             x_smoothed,
             smoothed_actual,
             smoothed_optimal,
@@ -122,9 +74,11 @@ def plot_regret(optimal_rewards, regrets):
             label="Regret"
         )
     else:
-        plt.plot(x, optimal_rewards, label="Optimal Reward", color='blue')
-        plt.plot(x, actual_rewards, label="Actual Reward", color='green')
-        plt.fill_between(
+        axes[1, 0].plot(x, optimal_rewards, label="Optimal Reward",
+                        color='blue')
+        axes[1, 0].plot(x, actual_rewards, label="Actual Reward",
+                        color='green')
+        axes[1, 0].fill_between(
             x,
             actual_rewards,
             optimal_rewards,
@@ -134,24 +88,73 @@ def plot_regret(optimal_rewards, regrets):
             label="Regret"
         )
 
-    plt.xlabel("Step")
-    plt.ylabel("Reward")
-    plt.title("Optimal vs Actual Reward Per Round (Regret Shaded)")
-    plt.legend()
-    plt.grid()
+    axes[1, 0].set_xlabel("Step")
+    axes[1, 0].set_ylabel("Reward")
+    axes[1, 0].set_title("Optimal vs Actual Reward Per Round (Regret Shaded)")
+    axes[1, 0].legend()
+    axes[1, 0].grid()
+
+    # Bottom-right: UCB or Price History
+    if has_ucb and ucb_history is not None:
+        n_prices = ucb_history.shape[2]
+        ucb_product0 = ucb_history[:, 0, :]
+        for i in range(n_prices):
+            ucb = ucb_product0[:, i]
+            is_finite = np.isfinite(ucb)
+            if np.any(is_finite):
+                first_finite = np.argmax(is_finite)
+                axes[1, 1].plot(
+                    np.arange(first_finite, len(ucb)),
+                    ucb[first_finite:],
+                    label=f"Price {i}"
+                )
+                if first_finite > 0:
+                    y_range = (np.nanmax(ucb[is_finite]) -
+                               np.nanmin(ucb[is_finite]) + 1)
+                    y_top = ucb[first_finite] + 2 * y_range
+                    axes[1, 1].plot(
+                        [first_finite - 1, first_finite],
+                        [y_top, ucb[first_finite]],
+                        color=axes[1, 1].lines[-1].get_color(),
+                        linestyle='dashed'
+                    )
+        axes[1, 1].set_xlim(0, ucb_history.shape[0] - 1)
+        axes[1, 1].set_ylim(0, 0.5)
+        axes[1, 1].set_xlabel("Step")
+        axes[1, 1].set_ylabel("UCB")
+        axes[1, 1].set_title("UCBs of Prices for product 0 Over Time")
+        axes[1, 1].legend()
+        axes[1, 1].grid()
+    else:
+        # For non-UCB algorithms (like Primal-Dual), show price history instead
+        if (hasattr(seller, 'history_chosen_prices') and
+                len(seller.history_chosen_prices) > 0):
+            price_history = np.array(seller.history_chosen_prices)
+            if price_history.ndim == 1:
+                price_history = price_history[:, None]
+
+            for i in range(price_history.shape[1]):
+                axes[1, 1].plot(price_history[:, i], label=f"Product {i}",
+                                alpha=0.7)
+
+            axes[1, 1].set_xlabel("Step")
+            axes[1, 1].set_ylabel("Chosen Price")
+            axes[1, 1].set_title("Price Selection History")
+            axes[1, 1].legend()
+            axes[1, 1].grid()
+        else:
+            algorithm_name = getattr(seller, "algorithm", "Unknown")
+            text = f'No UCB data available\n(Algorithm: {algorithm_name})'
+            axes[1, 1].text(
+                0.5, 0.5, text,
+                horizontalalignment='center',
+                verticalalignment='center',
+                transform=axes[1, 1].transAxes
+            )
+            axes[1, 1].set_title("UCB/Price Data")
+
+    plt.tight_layout()
     plt.show()
-
-
-def plot_all(seller, optimal_rewards, regrets, ucb_history=None):
-    """
-    Plot all relevant learning progress statistics for the seller agent.
-    """
-    plot_cum_reward(seller)
-    plot_heatmap(seller)
-    plot_regret(optimal_rewards, regrets)
-
-    if ucb_history is not None:
-        plot_ucb(ucb_history)
 
 
 def plot_cumulative_regret_by_distribution(T, regrets_dict, n_trials):
@@ -207,12 +210,20 @@ def plot_environment_results(environment):
         print("Warning: Environment does not have simulation results to plot")
         return
 
+    # Only pass UCB history if the seller type supports it
+    ucb_history = None
+    if (hasattr(environment, 'ucb_history') and
+        hasattr(environment.seller, 'algorithm') and
+        environment.seller.algorithm in ['ucb1', 'combinatorial_ucb',
+                                         'sliding_window_ucb']):
+        ucb_history = getattr(environment, 'ucb_history', None)
+
     # Plot results from a single simulation run
     plot_all(
         environment.seller,
         environment.optimal_rewards,
         environment.regrets,
-        getattr(environment, 'ucb_history', None)
+        ucb_history
     )
 
 

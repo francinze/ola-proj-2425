@@ -72,7 +72,7 @@ problem. It was the following:
 - input: Budget B, number of rounds T;
 - for t = 1,...,T do
   - for b ∈B do
-    - ¯f_t(b) ← 1/(N_t−1(b)) Sum[(t′=1 -> t-1)[f_t′(b)I(b_t′ = b)]];
+    - ¯f_t(b) ← 1/(N_t−1(b)) Sum\[(t′=1 -> t-1)\[f_t′(b)I(b_t′ = b)\];
     - ¯f_t^UCB(b) ← ¯f_t(b) + sqrt(2log(T)/N_t−1(b));
     – ¯c_t(b) ← 1/(N_t−1(b)) Sum[(t′=1 -> t-1)(c_t′(b)I(b_t′ = b))];
     - ¯c_t^LCB(b) ← ¯c_t(b) − sqrt(2log(T)/N_t−1(b));

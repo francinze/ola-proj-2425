@@ -137,7 +137,8 @@ class CombinatorialUCBSeller(UCB1Seller):
         # Additional tracking for Combinatorial-UCB
         self.cost_values = np.zeros((self.num_products, self.num_prices))
         self.cost_counts = np.zeros((self.num_products, self.num_prices))
-        self.cost_coeff = 1.0  # Cost coefficient for price-based costs
+        # Reduced cost coefficient for better performance
+        self.cost_coeff = 0.1
 
     def compute_ucb_lcb_bounds(self):
         """
@@ -306,14 +307,20 @@ class PrimalDualSeller(BaseSeller):
         log_algorithm_choice("Primal-Dual")
 
         # Primal-dual specific parameters
-        self.eta = 0.1  # Learning rate
+        self.eta = 0.01  # Reduced learning rate for better convergence
         self.rho_pd = self.B / self.T  # ρ = B/T as per project.md line 106
         self.lambda_pd = np.zeros(self.T)  # Dual variable for each round
         self.cost_history = []  # Track costs for each round
+        
+        # Track price selection history for plotting
+        self.history_chosen_prices = []  # For plotting price history
 
         # Regret minimizer parameters
         self.price_weights = np.zeros((self.num_products, self.num_prices))
-        self.regret_learning_rate = 0.1
+        self.regret_learning_rate = 0.05  # Reduced for more stable learning
+        
+        # Initialize UCBs as None to indicate no UCB data
+        self.ucbs = None
 
     def regret_minimizer(self, t):
         """
@@ -365,6 +372,12 @@ class PrimalDualSeller(BaseSeller):
 
             # Sample from the distribution
             chosen_indices = self.sample_from_regret_minimizer(gamma_t)
+            
+            # Record chosen prices for plotting
+            chosen_prices = self.price_grid[
+                np.arange(self.num_products), chosen_indices.astype(int)
+            ]
+            self.history_chosen_prices.append(chosen_prices.copy())
 
             log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
             return chosen_indices
