@@ -13,7 +13,6 @@ class Setting:
         epsilon: float = 0.1,
         B: int = None,
         distribution: str = "uniform",
-        budget_constraint: str = "lax",
         verbose: str = 'all',
         non_stationary: str = 'no',
         dist_params: float = (0.1, 0.9),
@@ -33,7 +32,6 @@ class Setting:
                 B = 100/self.n_products * self.cost_coeff * mean_cost
         self.B = B  # Production capacity
         self.distribution = distribution  # Distribution type
-        self.budget_constraint = budget_constraint
         self.verbose = verbose
         self.epsilon = epsilon
         self.non_stationary = non_stationary

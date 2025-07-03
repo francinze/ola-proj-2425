@@ -15,7 +15,7 @@ class Seller:
     """
     Seller class for the simulation of a market.
     """
-    def __init__(self, setting: Setting):
+    def __init__(self, setting: Setting, budget_constraint: str = "lax"):
         """
         Initialize the Seller class.
         :param products: A list of products.
@@ -27,7 +27,7 @@ class Seller:
             log_seller("Price grid is 1D, reshaping to 2D for compatibility")
             self.price_grid = self.price_grid.reshape((len(self.products), -1))
         self.B = setting.B  # Production capacity
-        self.inv_rule: str = setting.budget_constraint
+        self.inv_rule: str = budget_constraint
         self.setting = setting
         self.algorithm = setting.algorithm  # Algorithm choice
 
@@ -187,44 +187,6 @@ class Seller:
         )
 
         return np.minimum(np.maximum(lambda_raw, 0), self.T/self.B)
-
-    def inventory_constraint(
-        self, purchases: np.ndarray[float, Any]
-    ) -> np.ndarray[float, Any]:
-        """
-        Check if the purchases exceed the production capacity.
-        :param purchases: A list of purchases.
-        """
-        purchases = np.array(purchases, dtype=float)
-        total_purchases = np.count_nonzero(purchases)
-        exceeding_capacity = max(0, total_purchases - self.B)
-        if self.inv_rule == "lax" and exceeding_capacity > 0:
-            log_seller(
-                "Warning: Purchases exceed production capacity by "
-                f"{exceeding_capacity}."
-            )
-            # Set to 0 enough purchases (randomly)
-            # until total does not exceed capacity
-            if total_purchases > self.B:
-                indices = np.where(purchases > 0)[0]
-                np.random.shuffle(indices)
-                running_total = total_purchases
-                for idx in indices:
-                    if running_total <= self.B:
-                        break
-                    running_total -= 1
-                    purchases[idx] = 0
-        elif self.inv_rule == "strict" and exceeding_capacity > 0:
-            log_seller(
-                "Error: Purchases exceed production capacity by "
-                f"{exceeding_capacity}."
-            )
-            # Return all zeros, keeping the same length
-            purchases = np.zeros_like(purchases)
-        log_seller(
-            f"Purchases after inventory constraint: {purchases}"
-        )
-        return purchases  # No constraint violation
 
     def budget_constraint(
         self, purchases: np.ndarray[float, Any]

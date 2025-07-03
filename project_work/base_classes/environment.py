@@ -14,11 +14,11 @@ class Environment:
     behavior of the buyer.
     It also handles the simulation of multiple rounds of interactions.
     """
-    def __init__(self, setting: Setting):
+    def __init__(self, setting: Setting, seller: Seller = None):
         self.setting = setting
         self.t = 0
         self.distribution = setting.distribution
-        self.seller = Seller(setting)
+        self.seller = seller if seller is not None else Seller(setting)
         # Configure logging based on verbose setting
         configure_logging(setting.verbose)
         # Add valuation history tracking
@@ -30,7 +30,8 @@ class Environment:
         """
         Reset the environment and seller for a new trial.
         """
-        self.seller.reset(self.setting)
+        if self.seller is not None:
+            self.seller.reset(self.setting)
         self.t = 0
         self.prices = np.zeros((self.setting.T, self.setting.n_products))
         self.purchases = np.zeros(
@@ -38,9 +39,11 @@ class Environment:
             dtype=int
         )
         self.optimal_rewards = np.zeros(self.setting.T)
-        self.ucb_history = np.zeros(
-            (self.setting.T, self.seller.num_products, self.seller.num_prices)
-        )
+        if self.seller is not None:
+            self.ucb_history = np.zeros(
+                (self.setting.T, self.seller.num_products,
+                 self.seller.num_prices)
+            )
         self.regrets = np.zeros(self.setting.T)
 
     def round(self):
@@ -76,11 +79,11 @@ class Environment:
             # Store buyer's valuation for future reference
             self.valuation_history.append(self.buyer.valuations.copy())
 
-            demand = self.buyer.yield_demand(chosen_prices)
-            purchased = self.seller.budget_constraint(demand)
+            purchased = self.buyer.yield_demand(chosen_prices)
 
-            # Update UCBs after this round
-            self.ucb_history[self.t] = self.seller.ucbs.copy()
+            # Update UCBs after this round (if seller has UCBs)
+            if hasattr(self.seller, 'ucbs'):
+                self.ucb_history[self.t] = self.seller.ucbs.copy()
 
             self.seller.update(purchased, actions)
             self.purchases[self.t] = purchased

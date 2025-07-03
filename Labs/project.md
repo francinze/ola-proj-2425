@@ -1,331 +1,153 @@
-# Online Learning Applications
+# Online Learning Applications Project Requirements
 
-## Project Requirements
-
-
-## Recap on evaluation
-
-```
-The evaluation is composed by two parts:
-```
-### Written exam
-
-```
-Scheduled on the official calls (see Online Services)
-max 16 points
-Questions about theory
-```
-### Project
-
-```
 Three scheduled project presentations (see last slides)
 max 16 points
-```
-# Groups of at most 4-5 students▲! If you can’t find a group, send me an
-
-```
-email by Friday (18/04) and I will match you with other students without
-a group.
 The goal is to develop algorithms for a complex problem
 Includes modeling and coding
-```
-
-## Recap on evaluation
-
-```
-The evaluation is composed by two parts:
-```
-### Written exam
-
-```
-Scheduled on the official calls (see Online Services)
-max 16 points
-Questions about theory
-```
-### Project
-
-```
-Three scheduled project presentations (see last slides)
-max 16 points
-```
-# Groups of at most 4-5 students▲! If you can’t find a group, send me an
-
-```
-email by Friday (18/04) and I will match you with other students without
-a group.
-The goal is to develop algorithms for a complex problem
-Includes modeling and coding
-```
-
-## Overview of the project
-
 
 ## Goal
 
-```
 The goal of the project is to design online learning algorithms to sellmultipletypes of
 products underproduction constraints.
-```
 
 ## Setting
 
-```
 A company has to choose prices dynamically.
-```
+
 ### Parameters
 
-```
-Number of roundsT
-Number of types of productsN
-Set of possible pricesP(small and discrete set)
-```
-# Production capacityB▲! For simplicity, there is a total number of products
-
-```
-Bthat the company can produce (independently from the specific type of
+- Number of rounds T
+- Number of types of products N
+- Set of possible prices P (small and discrete set)
+- Production capacity B
+For simplicity, there is a total number of products B
+that the company can produce (independently from the specific type of
 product)
-```
+
 ### Buyer behavior
 
-```
 Has a valuationvifor each type of product inN
 Buys all products priced below their respective valuations
-```
 
 ## Interaction
 
-```
-At each roundt∈T:
-1 The company chooses which types of product to sell and set pricepifor each type
+At each round t∈T:
+
+- The company chooses which types of product to sell and set price p_i for each type
 of product
-2 A buyer with a valuation for each type of product arrives
-3 The buyer buys a unit of each product with price smaller than the product
+- A buyer with a valuation for each type of product arrives
+- The buyer buys a unit of each product with price smaller than the product
 valuation
-```
 
 ## Requirement 1: Single product and stochastic environment
 
+### R1 Enviroment
 
-## Environment
-
-```
-Build astochasticenvironment:
+Build a stochastic environment:
 A distribution over the valuations of a single type of product
-```
 
-## Design algorithms for a single product and stochastic environment
+### R1 Algorithm
 
-### Algorithm
+- Build a pricing strategy using UCB1 ignoring the inventory constraint.
+- Build a pricing strategy extending UCB1 to handle the inventory constraint.
 
-```
-Build a pricing strategy using UCB1ignoring the inventory constraint.
-```
-### Algorithm
-
-```
-Build a pricing strategy extending UCB1 to handle theinventory constraint.
-```
-### Hint
-
-```
-Extend the “UCB-like” approach that we saw for auctions to the pricing problem.
-```
-
-## Design algorithms for a single product and stochastic environment
-
-### Algorithm
-
-```
-Build a pricing strategy using UCB1ignoring the inventory constraint.
-```
-### Algorithm
-
-```
-Build a pricing strategy extending UCB1 to handle theinventory constraint.
-```
-### Hint
-
-```
-Extend the “UCB-like” approach that we saw for auctions to the pricing problem.
-```
+Hint: Extend the “UCB-like” approach that we saw for auctions to the pricing problem.
 
 ## Requirement 2: Multiple products and stochastic environment
 
+### R2 Environment
 
-## Environment
-
-```
-Build astochasticenvironment:
+Build a stochastic environment:
 A joint distribution over the valuations of all the types of products
-```
 
-## Design algorithms for multiple products and stochastic environment
+### R2 Algorithm
 
-### Algorithm
+Build a pricing strategy using Combinatorial-UCB with the inventory constraint.
 
-```
-Build a pricing strategy using Combinatorial-UCBwith the inventory constraint.
-```
-### Hint
+Hint: Extend the “UCB-like” approach that we saw for auctions to the combinatorial pricing
+problem. It was the following:
 
-```
-Extend the “UCB-like” approach that we saw for auctions to the combinatorial pricing
-problem.
-```
+#### Algorithm: UCB-Bidding Algorithm
 
-## Design algorithms for multiple products and stochastic environment
+- input: Budget B, number of rounds T;
+- for t = 1,...,T do
+  - for b ∈B do
+    - ¯f_t(b) ← 1/(N_t−1(b)) Sum[(t′=1 -> t-1)[f_t′(b)I(b_t′ = b)]];
+    - ¯f_t^UCB(b) ← ¯f_t(b) + sqrt(2log(T)/N_t−1(b));
+    – ¯c_t(b) ← 1/(N_t−1(b)) Sum[(t′=1 -> t-1)(c_t′(b)I(b_t′ = b))];
+    - ¯c_t^LCB(b) ← ¯c_t(b) − sqrt(2log(T)/N_t−1(b));
+  - compute γ_t solution of the LP defining OPT_t ;
+  - bid b_t ∼γ_t ;
+  - observe f_t(b_t) and c_t (b_t);
+  - B ← B−c_t(b_t);
+  - if B <1 then
+    - terminate;
 
-### Algorithm
+## Requirement 3: Best-of-both-worlds algorithms with a single product
 
-```
-Build a pricing strategy using Combinatorial-UCBwith the inventory constraint.
-```
-### Hint
+### R3 Environment
 
-```
-Extend the “UCB-like” approach that we saw for auctions to the combinatorial pricing
-problem.
-```
-
-## Requirement 3: Best-of-both-worlds algorithms with a single
-
-## product
-
-
-## Environment
-
-```
-Use thestochasticenvironment already designed:
+Use the stochastic environment already designed:
 A distribution over the valuations of a single product
-```
-```
-Build ahighly non-stationaryenvironment. At a high level, it should include:
+Build a highly non-stationary environment. At a high level, it should include:
 A sequence of valuations of the product (e.g., sampled from a distribution that
-changesquicklyover time)
-```
+changes quickly over time)
 
-## Design best-of-both-worlds algorithms with a single product
+### R3 Algorithm
 
-### Algorithm
+Build a pricing strategy using a primal-dual method with the inventory constraint.
 
-```
-Build a pricing strategy using a primal-dual methodwith the inventory constraint.
-```
-### Hint
+Hint: To design a primal-dual method, extend the results on “general auctions” to f and c
+suitable for the pricing problem. The primal-dual algorithm seen in class for auctions is:
 
-```
-To design a primal-dual method, extend the results on “general auctions” tof andc
-suitable for the pricing problem.
-```
+#### Algorithm: Pacing strategy
 
-## Design best-of-both-worlds algorithms with a single product
-
-### Algorithm
-
-```
-Build a pricing strategy using a primal-dual methodwith the inventory constraint.
-```
-### Hint
-
-```
-To design a primal-dual method, extend the results on “general auctions” tof andc
-suitable for the pricing problem.
-```
+- input: Budget B, number of rounds T , learning rate η, primal regret minimizer R;
+- initialization: ρ←B/T ,λ0 ←0;
+- for t = 1,2,...,T do
+  - choose distribution over bids γt ←R(t);
+  - bid bt ∼γt ;
+  - observe ft (bt ) and ct (bt ) ;
+  - λt ←Π[0,1/ρ](λt−1−η(ρ−ct (bt ))) ;
+  - B ←B−ct (bt );
+  - if B <1 then
+    - terminate;
+R is any regret minimizer and R(t) returns a distribution over bids at round t.
 
 ## Requirement 4: Best-of-both-worlds with multiple products
 
+### R4 Environment
 
-## Environment
-
-```
-Use thestochasticenvironment already designed:
+Use the stochastic environment already designed:
 A joint distribution over the valuations of all the types of products
-```
-```
-Build ahighly non-stationaryenvironment. At a high level, it should include:
+Build a highly non-stationary environment. At a high level, it should include:
 A sequence of correlated valuations for each type of product (e.g., sampled from a
-distribution that changesquicklyover time)
-```
+distribution that changes quickly over time)
 
-## Design best-of-both-worlds algorithms with multiple products
+### R4 Algorithm
 
-### Algorithm
+Build a pricing strategy using a primal-dual method with the inventory constraint.
 
-```
-Build a pricing strategy using a primal-dual methodwith the inventory constraint.
-```
-### Hint
-
-```
-To design a primal regret minimizer, notice that the pricing problem “decomposes”. It
+Hint: To design a primal regret minimizer, notice that the pricing problem “decomposes”. It
 is sufficient to design an (adversarial) regret minimizer for each type of product.
-```
 
-## Design best-of-both-worlds algorithms with multiple products
+## Requirement 5: Slightly non-stationary environments with multiple products
 
-### Algorithm
+## R5 Non-stationary environment
 
-```
-Build a pricing strategy using a primal-dual methodwith the inventory constraint.
-```
-### Hint
+Build a slightly non-stationary environment for the pricing problem. At a high level:
 
-```
-To design a primal regret minimizer, notice that the pricing problem “decomposes”. It
-is sufficient to design an (adversarial) regret minimizer for each type of product.
-```
+- Rounds are partitioned in intervals
+- In each interval the distribution of products valuations is fixed
+- Each interval has a different distribution
 
-## Requirement 5: Slightly non-stationary environments with multiple
-
-## products
-
-
-## Non-stationary environment
-
-```
-Build aslightly non-stationaryenvironment for the pricing problem. At a high level:
-Rounds are partitioned in intervals
-In each interval the distribution of products valuations is fixed
-Each interval has a different distribution
-```
-
-### Algorithm
+### R5 Algorithm
 
 Extend Combinatorial-UCB withsliding window
 
 ### Compare
 
 Compare the performance of:
-Combinatorial-UCB with sliding window
-The primal-dual method
 
-
-## Deliverable and presentation
-
-
-## Deliverable
-
-```
-Before the presentation you should deliver:
-Some slides describing the project and the results in detail:
-▷High level detailsabout the implemented algorithms
-▷graphsof the empirical results
-A link to a GitHub repository with the code of the project
-```
-```
-The presentation should be conducted as follows:
-You will have 20 minutes to deliver your presentation: additional 10 minutes will
-be used for questions and answers
-A detailed discussion of unexpected results is appreciated (e.g. the algorithm does
-not achieve a sublinear regret)
-```
-
-## Details about the project presentation schedule
-
-```
-You have three possible sessions to present the project inJuly, September,
-December;
-The deadline for the July project submission is11th of July
-The presentations will be in the days following the submission
-```
-
+- Combinatorial-UCB with sliding window
+- The primal-dual method

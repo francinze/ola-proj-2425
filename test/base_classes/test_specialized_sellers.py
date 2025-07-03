@@ -195,8 +195,11 @@ class TestPrimalDualSeller:
         seller.update(purchases, actions)
         
         assert seller.total_steps == 1
-        # Verify update_primal_dual was called (statistics updated)
-        assert seller.counts[0, 0] == 1
+        # Verify update_primal_dual was called (check appropriate metrics)
+        assert len(seller.cost_history) == 1
+        assert len(seller.history_rewards) == 1
+        # Check that price weights were updated
+        assert seller.price_weights[0, 0] != 0.0
         
         # Restore original method
         seller.budget_constraint = original_budget_constraint
