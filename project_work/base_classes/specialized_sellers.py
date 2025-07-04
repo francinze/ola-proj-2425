@@ -311,14 +311,11 @@ class PrimalDualSeller(BaseSeller):
         self.rho_pd = self.B / self.T  # ρ = B/T as per project.md line 106
         self.lambda_pd = np.zeros(self.T)  # Dual variable for each round
         self.cost_history = []  # Track costs for each round
-        
-        # Track price selection history for plotting
-        self.history_chosen_prices = []  # For plotting price history
 
         # Regret minimizer parameters
         self.price_weights = np.zeros((self.num_products, self.num_prices))
         self.regret_learning_rate = 0.05  # Reduced for more stable learning
-        
+
         # Initialize UCBs as None to indicate no UCB data
         self.ucbs = None
 
@@ -372,18 +369,25 @@ class PrimalDualSeller(BaseSeller):
 
             # Sample from the distribution
             chosen_indices = self.sample_from_regret_minimizer(gamma_t)
-            
-            # Record chosen prices for plotting
-            chosen_prices = self.price_grid[
-                np.arange(self.num_products), chosen_indices.astype(int)
-            ]
-            self.history_chosen_prices.append(chosen_prices.copy())
 
             log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
             return chosen_indices
         except Exception as e:
             log_error(f"Error in Primal-Dual pull_arm: {e}")
             return np.zeros(self.num_products, dtype=int)
+
+    def yield_prices(self, chosen_indices):
+        """
+        Override yield_prices to handle PrimalDual's cost tracking mechanism.
+        """
+        chosen_prices = self.price_grid[
+            np.arange(self.num_products), chosen_indices
+        ]
+        # Use the base class method for history tracking
+        self.history_chosen_prices.append(chosen_indices)
+
+        # PrimalDualSeller handles cost tracking in update_primal_dual
+        return np.array(chosen_prices)
 
     def update(self, purchased, actions):
         """Update primal-dual statistics after observing rewards."""
