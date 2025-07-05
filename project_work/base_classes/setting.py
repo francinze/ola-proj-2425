@@ -141,13 +141,74 @@ class Setting:
             params = (mu, sigma)
 
         elif self.distribution == "exponential":
-            params = 0
+            # Create mean value and standard deviation vectors
+            mean = np.zeros((self.T, self.n_products))
+            scale = np.zeros((self.T, self.n_products))
+            for i in range(self.n_products):
+                # Create a random sequence of means
+                mean_temp = np.random.uniform(
+                    low=-0.5, high=1, size=switch_num[i] + 1
+                )
+                # Create a random sequence of standard deviations
+                scale_temp = np.random.uniform(
+                    low=0.1, high=1, size=switch_num[i] + 1
+                )
+
+                for j in range(0, switch_num[i] + 1):
+                    start_idx = switch_times[j, i].astype(int)
+                    end_idx = switch_times[j + 1, i].astype(int)
+                    mean[start_idx:end_idx, i] = mean_temp[j]
+                    scale[start_idx:end_idx, i] = scale_temp[j]
+
+            params = (mean, scale)
+
         elif self.distribution == "beta":
-            params = 0
+            # Create mean value and standard deviation vectors
+            a = np.zeros((self.T, self.n_products))
+            b = np.zeros((self.T, self.n_products))
+            for i in range(self.n_products):
+                # Create a random sequence of means
+                a_temp = np.random.uniform(
+                    low=0.5, high=5, size=switch_num[i] + 1
+                )
+                # Create a random sequence of standard deviations
+                b_temp = np.random.uniform(
+                    low=0.5, high=5, size=switch_num[i] + 1
+                )
+
+                for j in range(0, switch_num[i] + 1):
+                    start_idx = switch_times[j, i].astype(int)
+                    end_idx = switch_times[j + 1, i].astype(int)
+                    a[start_idx:end_idx, i] = a_temp[j]
+                    b[start_idx:end_idx, i] = b_temp[j]
+
+            params = (a, b)
+
         elif self.distribution == "lognormal":
-            params = 0
+            # Create mean value and standard deviation vectors
+            mean = np.zeros((self.T, self.n_products))
+            sigma = np.zeros((self.T, self.n_products))
+            for i in range(self.n_products):
+                # Create a random sequence of means
+                mean_temp = np.random.uniform(
+                    low=-1, high=0.5, size=switch_num[i] + 1
+                )
+                # Create a random sequence of standard deviations
+                sigma_temp = np.random.uniform(
+                    low=0.1, high=1, size=switch_num[i] + 1
+                )
+
+                for j in range(0, switch_num[i] + 1):
+                    start_idx = switch_times[j, i].astype(int)
+                    end_idx = switch_times[j + 1, i].astype(int)
+                    mean[start_idx:end_idx, i] = mean_temp[j]
+                    sigma[start_idx:end_idx, i] = sigma_temp[j]
+
+            params = (mean, sigma)
+
         elif self.distribution == "test":
-            params = 0
+            params = None
+
         elif self.distribution == "constant":
             # Create mean value and standard deviation vectors
             mu = np.zeros((self.T, self.n_products))
