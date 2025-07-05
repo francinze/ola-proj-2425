@@ -26,7 +26,7 @@ class Setting:
             prices = np.linspace(0.1, 1.0, int(1 / epsilon))
             mean_cost = np.mean(prices)
             if self.T is not None:
-                B = self.T/self.n_products * self.cost_coeff * mean_cost
+                B = self.T * self.cost_coeff # self.T/self.n_products * self.cost_coeff * mean_cost 
             else:
                 # Default when T is None
                 B = 100/self.n_products * self.cost_coeff * mean_cost

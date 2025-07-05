@@ -407,7 +407,7 @@ class PrimalDualSeller(BaseSeller):
             np.arange(self.num_products), actions.astype(int)
         ]
         price_weighted_rewards = chosen_prices * rewards
-        current_cost = np.sum(chosen_prices)  # c_t(b_t)
+        current_cost = np.count_nonzero(chosen_prices) # np.sum(chosen_prices)  # c_t(b_t)
 
         # Store cost for this round
         self.cost_history.append(current_cost)
@@ -416,7 +416,7 @@ class PrimalDualSeller(BaseSeller):
         for i, price_idx in enumerate(actions):
             price_idx = int(price_idx)
             # Update weight for chosen price with adjusted reward
-            lambda_cost = self.lambda_pd[self.total_steps] * chosen_prices[i]
+            lambda_cost = self.lambda_pd[self.total_steps] * ((chosen_prices[i]>0).astype(float) - self.rho_pd) # chosen_prices[i] 
             adjusted_reward = price_weighted_rewards[i] - lambda_cost
             self.price_weights[i, price_idx] += adjusted_reward
 
@@ -631,7 +631,7 @@ class ImprovedPrimalDualSeller(BaseSeller):
 
         # Calculate cost c_t(b_t) - ONLY if purchase was made
         # (economically sound)
-        current_cost = np.sum(chosen_prices * rewards)  # Cost only on sales
+        current_cost = np.count_nonzero(chosen_prices * rewards) # np.sum(chosen_prices * rewards)  # Cost only on sales
 
         # Store cost for tracking
         self.cost_history.append(current_cost)
@@ -641,7 +641,7 @@ class ImprovedPrimalDualSeller(BaseSeller):
             price_idx = int(price_idx)
 
             # Calculate adjusted reward considering dual variable
-            lambda_cost = self.lambda_t * chosen_prices[i] * rewards[i]
+            lambda_cost = self.lambda_t * ((chosen_prices[i] * rewards[i]>0).astype(float) - self.rho) # chosen_prices[i] * rewards[i] 
             adjusted_reward = price_weighted_rewards[i] - lambda_cost
 
             # Convert reward to loss for regret minimizer
