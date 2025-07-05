@@ -55,6 +55,8 @@ class Seller:
         self.counts = np.zeros((self.num_products, self.num_prices))
         self.values = np.zeros((self.num_products, self.num_prices))
         self.ucbs = np.full((self.num_products, self.num_prices), np.inf)
+        self.cost_values = np.ones((self.num_products, self.num_prices)) * self.num_products
+        self.lcbs = np.full((self.num_products, self.num_prices), 0.)
         self.total_steps = 0
 
         log_seller(f"Initialized Seller with {self.num_products} products "
@@ -76,7 +78,7 @@ class Seller:
         ]
         self.history_chosen_prices.append(chosen_indices)
 
-        self.cost[self.total_steps] = np.sum(chosen_prices)*self.cost_coeff
+        self.cost[self.total_steps] = np.sum(chosen_prices)*self.cost_coeff #  np.count_nonzero(chosen_prices)
 
         return np.array(chosen_prices)
 
@@ -133,7 +135,7 @@ class Seller:
         price_weighted_rewards = chosen_prices * rewards
 
         # Calculate cost for current step before updating lambda
-        current_cost = np.sum(chosen_prices) * self.cost_coeff
+        current_cost = np.sum(chosen_prices) * self.cost_coeff #  np.count_nonzero(chosen_prices)
         self.cost[self.total_steps] = current_cost
 
         # Update lambda for next step if not at final step

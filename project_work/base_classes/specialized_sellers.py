@@ -3,6 +3,7 @@ Specialized seller classes for different project requirements.
 Each class extends the base Seller class with specific algorithms.
 """
 import numpy as np
+import scipy as sp
 from .seller import Seller
 from .setting import Setting
 from .logger import (log_error, log_algorithm_choice,
@@ -64,9 +65,23 @@ class UCB1Seller(BaseSeller):
             chosen_indices = np.array([], dtype=int)
 
             for i in range(self.num_products):
-                # UCB1: select arm with highest UCB value
-                idx = int(np.argmax(self.ucbs[i]))
-                chosen_indices = np.append(chosen_indices, idx)
+
+                if self.total_steps < self.num_prices:
+                    chosen_indices = np.append(chosen_indices, self.total_steps)
+                else:
+                    # UCB1: select arm with highest UCB value
+                    """if np.sum(self.lcbs[i] <= np.zeros(len(self.lcbs[i]))):
+                        idx = np.zeros(len(self.ucbs[i]))
+                        idx[np.argmax(self.ucbs[i])] = 1"""
+                    c = -self.ucbs[i]
+                    A_ub = [self.lcbs[i]]
+                    b_ub = [self.rho_pd]
+                    A_eq = [np.ones(self.num_prices)]
+                    b_eq = [1]
+                    res = sp.optimize.linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=(0,1))
+                    idx = np.random.choice(self.num_prices, p=res.x)
+
+                    chosen_indices = np.append(chosen_indices, idx)
 
             log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
             return chosen_indices
@@ -94,7 +109,7 @@ class UCB1Seller(BaseSeller):
         # Calculate price-weighted rewards
         price_weighted_rewards = self.calculate_price_weighted_rewards(
             actions, rewards)
-
+        
         for i, price_idx in enumerate(actions):
             price_idx = int(price_idx)
             self.counts[i, price_idx] += 1
@@ -103,10 +118,18 @@ class UCB1Seller(BaseSeller):
 
             # UCB1 update with price-weighted reward
             reward_i = price_weighted_rewards[i]
-            self.values[i, price_idx] = (old_value * (n-1) / n +
-                                         (reward_i - old_value) / n)
+            self.values[i, price_idx] = (old_value * (n-1) +
+                                         (reward_i - old_value)) / n 
             self.ucbs[i, price_idx] = self.values[i, price_idx] + \
-                np.sqrt(2 * np.log(self.total_steps) / n)
+                np.sqrt(2 * np.log(self.T) / n)
+            
+            # Update cost statistics
+            old_cost = self.cost_values[i, price_idx]
+            cost_i = np.count_nonzero(price_weighted_rewards[i])
+            self.cost_values[i, price_idx] = (old_cost * (n-1) / n +
+                                              (cost_i - old_cost) / n)
+            self.lcbs[i, price_idx] = self.cost_values[i, price_idx] - \
+                np.sqrt(2 * np.log(self.T) / n)
 
             log_ucb1_update(i, price_idx, self.counts[i, price_idx],
                             self.values[i, price_idx],
@@ -128,163 +151,34 @@ class CombinatorialUCBSeller(UCB1Seller):
     - Samples from γ_t instead of greedy selection
     """
 
+
     def __init__(self, setting: Setting):
         """Initialize Combinatorial-UCB seller."""
         super().__init__(setting, use_inventory_constraint=True)
         self.algorithm = "combinatorial_ucb"
         log_algorithm_choice("Combinatorial-UCB")
-
-        # Additional tracking for Combinatorial-UCB
-        self.cost_values = np.zeros((self.num_products, self.num_prices))
-        self.cost_counts = np.zeros((self.num_products, self.num_prices))
-        # Reduced cost coefficient for better performance
-        self.cost_coeff = 0.1
-
-    def compute_ucb_lcb_bounds(self):
-        """
-        Compute UCB bounds for rewards and LCB bounds for costs.
-        Returns: (ucb_rewards, lcb_costs)
-        """
-        ucb_rewards = np.zeros((self.num_products, self.num_prices))
-        lcb_costs = np.zeros((self.num_products, self.num_prices))
-
-        for i in range(self.num_products):
-            for j in range(self.num_prices):
-                n = self.counts[i, j]
-                if n > 0:
-                    # UCB for rewards (f_t)
-                    confidence = np.sqrt(2 * np.log(self.total_steps) / n)
-                    ucb_rewards[i, j] = self.values[i, j] + confidence
-
-                    # LCB for costs (c_t)
-                    lcb_costs[i, j] = self.cost_values[i, j] - confidence
-                else:
-                    # Optimistic initialization
-                    ucb_rewards[i, j] = np.inf
-                    lcb_costs[i, j] = 0.0
-
-        return ucb_rewards, lcb_costs
-
-    def solve_lp_for_distribution(self, ucb_rewards, lcb_costs):
-        """
-        Solve LP to get distribution γ_t over price combinations.
-        Simplified version: use softmax over expected values.
-        """
-        # Compute expected profit for each price combination
-        expected_profits = np.zeros((self.num_products, self.num_prices))
-
-        for i in range(self.num_products):
-            for j in range(self.num_prices):
-                # Expected profit = UCB_reward - LCB_cost
-                expected_profits[i, j] = ucb_rewards[i, j] - lcb_costs[i, j]
-
-        # Apply softmax to get probabilities for each product
-        gamma_t = np.zeros((self.num_products, self.num_prices))
-        for i in range(self.num_products):
-            # Avoid overflow in softmax and handle NaN/inf values
-            profits = expected_profits[i]
-
-            # Replace inf values with large finite values
-            profits = np.where(np.isinf(profits), 1e10, profits)
-            profits = np.where(np.isnan(profits), 0, profits)
-
-            # Softmax computation with numerical stability
-            max_val = np.max(profits)
-            if np.isfinite(max_val):
-                exp_vals = np.exp(profits - max_val)
-                sum_exp = np.sum(exp_vals)
-                if sum_exp > 0:
-                    gamma_t[i] = exp_vals / sum_exp
-                else:
-                    gamma_t[i] = np.ones(self.num_prices) / self.num_prices
-            else:
-                gamma_t[i] = np.ones(self.num_prices) / self.num_prices
-
-        return gamma_t
-
-    def sample_from_distribution(self, gamma_t):
-        """
-        Sample price indices from the distribution γ_t.
-        """
-        chosen_indices = np.zeros(self.num_products, dtype=int)
-
-        for i in range(self.num_products):
-            # Sample according to the distribution
-            chosen_indices[i] = np.random.choice(
-                self.num_prices, p=gamma_t[i]
-            )
-
-        return chosen_indices
-
+        self.W_avg = np.zeros((self.num_products, self.num_prices), dtype=float)
+        self.N_pulls = np.zeros((self.num_products, self.num_prices), dtype=int)
+        self.t = 0
+        self.A_t = None
+        self.rows_t = None
+        self.cols_t = None
+    
     def pull_arm(self):
-        """
-        Combinatorial-UCB arm selection following the LP-based approach.
-        """
-        log_arm_selection(self.algorithm, self.total_steps, "starting")
-        try:
-            # Compute UCB bounds for rewards and LCB bounds for costs
-            ucb_rewards, lcb_costs = self.compute_ucb_lcb_bounds()
+        # if an arm is unexplored, then the UCB is a large value
+        W = np.zeros(self.W_avg.shape, dtype=float)
+        large_value = (1 + np.sqrt(2*np.log(self.T)/1))*10
+        W[self.N_pulls==0] = large_value
+        mask = self.N_pulls>0
+        W[mask] = self.W_avg[mask] + np.sqrt(2*np.log(self.T)/self.N_pulls[mask])
+        self.rows_t, self.cols_t = sp.optimize.linear_sum_assignment(W, maximize=True)
+        self.A_t = list(zip(self.rows_t, self.cols_t))
+        return self.A_t
 
-            # Solve LP to get distribution over price combinations
-            gamma_t = self.solve_lp_for_distribution(ucb_rewards, lcb_costs)
-
-            # Sample from the distribution
-            chosen_indices = self.sample_from_distribution(gamma_t)
-
-            log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
-            return chosen_indices
-        except Exception as e:
-            log_error(f"Error in Combinatorial-UCB pull_arm: {e}")
-            return np.zeros(self.num_products, dtype=int)
-
-    def update(self, purchased, actions):
-        """Update Combinatorial-UCB statistics after observing rewards."""
-        purchased = np.clip(purchased, 0, 1)
-
-        # Apply inventory constraint
-        if self.use_inventory_constraint:
-            purchased = self.budget_constraint(purchased)
-
-        rewards = purchased
-        self.update_combinatorial_ucb(actions, rewards)
-
-    def update_combinatorial_ucb(self, actions, rewards):
-        """
-        Update Combinatorial-UCB statistics for both rewards and costs.
-        """
-        self.total_steps += 1
-
-        # Calculate price-weighted rewards and costs
-        chosen_prices = self.price_grid[
-            np.arange(self.num_products), actions.astype(int)
-        ]
-        price_weighted_rewards = chosen_prices * rewards
-        costs = chosen_prices * self.cost_coeff  # Cost proportional to price
-
-        for i, price_idx in enumerate(actions):
-            price_idx = int(price_idx)
-
-            # Update reward statistics
-            self.counts[i, price_idx] += 1
-            n = self.counts[i, price_idx]
-            old_value = self.values[i, price_idx]
-
-            reward_i = price_weighted_rewards[i]
-            self.values[i, price_idx] = (old_value * (n-1) / n +
-                                         (reward_i - old_value) / n)
-
-            # Update cost statistics
-            self.cost_counts[i, price_idx] += 1
-            old_cost = self.cost_values[i, price_idx]
-            cost_i = costs[i]
-            self.cost_values[i, price_idx] = (old_cost * (n-1) / n +
-                                              (cost_i - old_cost) / n)
-
-            log_ucb1_update(i, price_idx, self.counts[i, price_idx],
-                            self.values[i, price_idx], 0.0)  # UCB on demand
-
-        # Store price-weighted rewards in history
-        self.history_rewards.append(np.sum(price_weighted_rewards))
+    def update(self, rewards):
+        self.N_pulls[self.rows_t, self.cols_t] += 1
+        self.W_avg[self.rows_t, self.cols_t] += (rewards - self.W_avg[self.rows_t, self.cols_t])/self.N_pulls[self.rows_t, self.cols_t]
+        self.t += 1
 
 
 class PrimalDualSeller(BaseSeller):
