@@ -77,6 +77,7 @@ class MarketLogger:
 
         # Set initial state to disabled
         self.enabled = False
+        self.summary_mode = False
         self.component_levels = {
             LogLevel.ENVIRONMENT: False,
             LogLevel.SELLER: False,
@@ -91,7 +92,7 @@ class MarketLogger:
 
         Args:
             verbose: Verbose setting ('all', 'seller', 'buyer', 'environment',
-                    'simulation', or None)
+                    'simulation', 'summary', or None)
         """
         # Reset all component levels
         for level in self.component_levels:
@@ -99,10 +100,15 @@ class MarketLogger:
                 self.component_levels[level] = False
 
         self.enabled = verbose is not None
+        self.summary_mode = verbose == 'summary'
 
         if verbose == 'all':
             for level in self.component_levels:
                 self.component_levels[level] = True
+        elif verbose == 'summary':
+            # Summary mode enables minimal logging during simulation
+            # Final summary will be handled separately in environment
+            pass
         elif verbose in ['seller', 'buyer', 'environment', 'simulation']:
             level_enum = LogLevel(verbose)
             self.component_levels[level_enum] = True
@@ -116,6 +122,10 @@ class MarketLogger:
     def _should_log(self, component: LogLevel) -> bool:
         """Check if logging is enabled for a component."""
         return self.enabled and self.component_levels.get(component, False)
+
+    def is_summary_mode(self) -> bool:
+        """Check if summary mode is enabled."""
+        return self.summary_mode
 
     def log_environment(self, message: str, level: str = 'info'):
         """Log environment-related messages."""
@@ -167,7 +177,7 @@ def configure_logging(verbose: Optional[str] = None):
 
     Args:
         verbose: Verbose setting ('all', 'seller', 'buyer', 'environment',
-                'simulation', or None)
+                'simulation', 'summary', or None)
     """
     market_logger.configure(verbose)
 
@@ -195,6 +205,11 @@ def log_simulation(message: str, level: str = 'info'):
 def log_error(message: str, level: str = 'error'):
     """Log error messages."""
     market_logger.log_error(message, level)
+
+
+def is_summary_mode() -> bool:
+    """Check if summary mode is enabled."""
+    return market_logger.is_summary_mode()
 
 
 def disable_logging():
