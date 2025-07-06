@@ -300,21 +300,26 @@ class PrimalDualSeller(BaseSeller):
     - Updates dual variable λ with proper projection Π[0,1/ρ]
     """
 
-    def __init__(self, setting: Setting):
+    def __init__(
+        self,
+        setting: Setting,
+        learning_rate: float = 0.01,
+        regret_learning_rate: float = 0.05
+    ):
         """Initialize Primal-Dual seller."""
         super().__init__(setting)
         self.algorithm = "primal_dual"
         log_algorithm_choice("Primal-Dual")
 
         # Primal-dual specific parameters
-        self.eta = 0.01  # Reduced learning rate for better convergence
+        self.eta = learning_rate
         self.rho_pd = self.B / self.T  # ρ = B/T as per project.md line 106
         self.lambda_pd = np.zeros(self.T)  # Dual variable for each round
         self.cost_history = []  # Track costs for each round
 
         # Regret minimizer parameters
         self.price_weights = np.zeros((self.num_products, self.num_prices))
-        self.regret_learning_rate = 0.05  # Reduced for more stable learning
+        self.regret_learning_rate = regret_learning_rate
 
         # Initialize UCBs as None to indicate no UCB data
         self.ucbs = None
@@ -478,7 +483,13 @@ class ImprovedPrimalDualSeller(BaseSeller):
     - λ_t ← Π[0,1/ρ](λ_{t-1} - η(ρ - c_t(b_t)))
     """
 
-    def __init__(self, setting: Setting):
+    def __init__(
+        self,
+        setting: Setting,
+        learning_rate: float = 0.01,
+        regret_learning_rate: float = 0.05,
+        base_temperature: float = 1.0
+    ):
         """Initialize Improved Primal-Dual seller."""
         super().__init__(setting)
         self.algorithm = "improved_primal_dual"
@@ -486,12 +497,12 @@ class ImprovedPrimalDualSeller(BaseSeller):
 
         # Primal-dual parameters from project.md
         self.rho = self.B / self.T  # ρ = B/T (pacing rate)
-        self.eta = 0.001  # Small learning rate for stability
+        self.eta = learning_rate  # Small learning rate for stability
         self.lambda_t = 0.0  # Current dual variable (λ_0 = 0)
 
         # Regret minimizer (Hedge/Exponential Weights)
         self.cumulative_losses = np.zeros((self.num_products, self.num_prices))
-        self.regret_eta = 0.01  # Learning rate for regret minimizer
+        self.regret_eta = regret_learning_rate
 
         # Enhanced tracking
         self.cost_history = []
@@ -499,7 +510,7 @@ class ImprovedPrimalDualSeller(BaseSeller):
         self.remaining_budget = self.B
 
         # Temperature scaling for better exploration/exploitation
-        self.base_temperature = 1.0
+        self.base_temperature = base_temperature
 
         log_algorithm_choice(
             f"Improved Primal-Dual (η={self.eta}, ρ={self.rho:.6f})"
