@@ -1,6 +1,12 @@
-from .seller import Seller
+#from .seller import Seller
 from .buyer import Buyer
 from .setting import Setting
+
+#req_5
+from .seller import Seller as BaseSeller
+from .seller_sliding import SellerSliding
+
+
 import numpy as np
 from plotting import (
     plot_all, plot_cumulative_regret_by_distribution,
@@ -20,7 +26,18 @@ class Environment:
         self.setting = setting
         self.t = 0
         self.distribution = setting.distribution
+
+        # REQ-5 Conditionally import the correct Seller class based on the algorithm
+        """ if setting.algorithm == "ucb_sliding":
+            from .seller_sliding import SellerSliding as Seller
+        else:
+            from .seller import Seller
         self.seller = Seller(setting)
+        """
+        self.seller = self._select_seller(setting)
+
+
+        
         # Collect log of results
         self.reset()
 
@@ -33,7 +50,7 @@ class Environment:
         self.prices = np.zeros((self.setting.T, self.setting.n_products))
         self.purchases = np.zeros(
             (self.setting.T, self.setting.n_products),
-            dtype=int
+             dtype=np.int32  # force correct numeric dtype
         )
         self.optimal_rewards = np.zeros(self.setting.T)
         self.ucb_history = np.zeros(
@@ -48,10 +65,17 @@ class Environment:
         """
         try:
             actions = self.seller.pull_arm()
-            chosen_prices = self.seller.yield_prices(actions)
-            chosen_indices = actions
+            #chosen_prices = self.seller.yield_prices(actions)
+            #REQ_5
+            chosen_prices, chosen_indices = self.seller.yield_prices(actions)
+            #chosen_indices = actions
             self.seller.history_chosen_prices.append(chosen_indices)
             self.prices[self.t] = chosen_prices
+
+            print("DEBUG -- chosen_prices:", chosen_prices)
+            print("type:", type(chosen_prices))
+            print("shape:", np.shape(chosen_prices))
+
 
             if self.setting.non_stationary == 'slightly' or self.setting.non_stationary == 'highly' or self.setting.non_stationary == 'manual':
                 if len(self.setting.dist_params) == 2:
@@ -70,10 +94,35 @@ class Environment:
             purchased = self.seller.budget_constraint(demand)
 
             # Update UCBs after this round
+            print("DEBUG -- ucb shape:", np.shape(self.seller.ucbs))
             self.ucb_history[self.t] = self.seller.ucbs.copy()
 
             self.seller.update(purchased, actions)
-            self.purchases[self.t] = purchased
+            print("DEBUG -- purchased:", purchased)
+            print("type:", type(purchased))
+            print("shape:", np.shape(purchased))
+
+            print("DEBUG -- purchased dtype:", purchased.dtype)
+            print("DEBUG -- purchased[0] type:", type(purchased[0]))
+
+            #self.purchases[self.t] = purchased
+            #self.purchases[self.t, :] = np.array(purchased, dtype=int).flatten()
+            # Ensure purchased is a 1D int array
+            purchased_clean = np.asarray(purchased, dtype=np.int32).flatten()
+            if purchased_clean.ndim != 1 or purchased_clean.shape[0] != self.setting.n_products:
+                raise ValueError(f"Malformed purchased shape: {purchased_clean.shape}")
+
+            # Validate purchases matrix shape before writing
+            assert self.purchases.shape == (self.setting.T, self.setting.n_products), \
+                f"Expected self.purchases shape {(self.setting.T, self.setting.n_products)}, got {self.purchases.shape}"
+
+            # Write safely to the row
+            print("DEBUG -- final purchased_clean:", purchased_clean)
+            print("DEBUG -- purchased_clean shape:", purchased_clean.shape)
+            print("DEBUG -- self.purchases row shape:", self.purchases[self.t, :].shape)
+
+            self.purchases[self.t, :] = purchased_clean
+
 
             # --- Compute optimal reward for this round ---
             optimal_reward = self.compute_optimal_reward(self.buyer.valuations)
@@ -176,3 +225,10 @@ class Environment:
             n_trials
         )
         plot_ucb_product0_by_distribution(avg_ucb_dict)
+
+    def _select_seller(self, setting):
+        if setting.algorithm == "ucb_sliding":
+            return SellerSliding(setting)
+        else:
+            return BaseSeller(setting)
+        

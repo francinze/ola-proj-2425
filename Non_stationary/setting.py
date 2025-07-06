@@ -16,7 +16,10 @@ class Setting:
         budget_constraint: str = "lax",
         verbose: str = 'all',
         non_stationary: str = 'no',
-        dist_params: float = (0.1, 0.9)
+        algorithm: str = 'ucb',  # Sliding_window
+        sliding_window_size: int = 100, #Sliding_window
+        dist_params: float = (0.1, 0.9),
+        
     ):
         self.T = T
         self.n_products = n_products
@@ -32,6 +35,12 @@ class Setting:
         self.epsilon = epsilon
         self.non_stationary = non_stationary
         self.dist_params = self.create_params(dist_params)
+
+        #req_5
+        self.algorithm = algorithm
+        self.sliding_window_size = sliding_window_size
+   
+
 
     def create_params(self, dist_params):
         """
