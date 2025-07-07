@@ -27,39 +27,40 @@ from base_classes.setting import Setting
 from base_classes.environment import Environment
 from base_classes.specialized_sellers import PrimalDualSeller
 
+
 class ParameterTuner:
     """Comprehensive parameter tuning for primal-dual algorithms - Requirement 4 only"""
-    
+
     def __init__(self):
         self.results = []
         self.start_time = None
-        
+
     def define_parameter_grids(self):
         """Define parameter grids for both algorithms"""
-        
+
         # PrimalDualSeller parameters - expanded grid
         self.primal_dual_params = {
             'learning_rate': [0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1],
             'regret_learning_rate': [0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5]
         }
-        
+
         # PrimalDualSeller parameters - expanded grid
         self.improved_params = {
             'learning_rate': [0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
             'regret_learning_rate': [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1],
             'base_temperature': [0.1, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]
         }
-        
+
         # Generate all parameter combinations
         self.primal_dual_combinations = list(itertools.product(
             *self.primal_dual_params.values()
         ))
-        
+
         self.improved_combinations = list(itertools.product(
             *self.improved_params.values()
         ))
-        
-        print(f"📊 Parameter Grid Summary (Requirement 4 only):")
+
+        print("📊 Parameter Grid Summary (Requirement 4 only):")
         print(f"   PrimalDualSeller combinations: {len(self.primal_dual_combinations)}")
         print(f"   PrimalDualSeller combinations: {len(self.improved_combinations)}")
         print(f"   Total combinations: {len(self.primal_dual_combinations) + len(self.improved_combinations)}")
@@ -108,13 +109,13 @@ class ParameterTuner:
         # From empirical testing: algorithms achieve 15-25x theoretical bound
         # Use 20x as compliance threshold until algorithms are fixed
         compliance_threshold = 20 * theoretical_bound
-        
+
         # TODO: Fix algorithm implementations to achieve theoretical bounds!
-        
+
         # Performance metrics (budget utilization removed as per user request)
         # Count actual purchases (binary decisions where purchase was made)
         purchase_decisions = np.sum([1 for r in rewards if r > 0])
-        
+    
         # Debug print for first few experiments to check values
         if hasattr(env.seller, '_debug_print') and env.seller._debug_print:
             print(f"Debug: Final regret: {cum_regret[-1]:.2f}, "

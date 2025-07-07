@@ -100,7 +100,9 @@ class Req3ParameterTuner:
             'avg_regret': np.mean(regrets),
             'theoretical_bound': theoretical_bound,
             'regret_ratio': cum_regret[-1] / theoretical_bound,
-            'efficiency': (np.sum(rewards) / np.sum(env.optimal_rewards)) * 100,
+            'efficiency': (
+                np.sum(rewards) / np.sum(env.optimal_rewards)
+            ) * 100,
             'regret_compliance': cum_regret[-1] <= 2 * theoretical_bound,
             'learning_trend': self.calculate_learning_trend(regrets),
             'total_purchases': purchase_decisions,
@@ -254,10 +256,14 @@ class Req3ParameterTuner:
         }).round(3)
 
         # Flatten column names
-        grouped.columns = ['_'.join(col).strip() for col in grouped.columns.values]
+        grouped.columns = [
+            '_'.join(col).strip() for col in grouped.columns.values
+        ]
 
         # Sort by performance score
-        grouped = grouped.sort_values('performance_score_mean', ascending=False)
+        grouped = grouped.sort_values(
+            'performance_score_mean', ascending=False
+        )
 
         print("🏆 TOP 5 PARAMETER CONFIGURATIONS:")
         print("-" * 80)
@@ -287,13 +293,22 @@ class Req3ParameterTuner:
                 'regret_compliance': 'mean'
             }).round(3)
 
-            param_analysis.columns = ['_'.join(col).strip() for col in param_analysis.columns.values]
-            param_analysis = param_analysis.sort_values('performance_score_mean', ascending=False)
+            param_analysis.columns = [
+                '_'.join(col).strip() for col in param_analysis.columns.values
+            ]
+            param_analysis = param_analysis.sort_values(
+                'performance_score_mean', ascending=False
+            )
 
             print(f"\n📈 {param.upper()} Impact:")
             print(f"Best value: {param_analysis.index[0]} (Score: {param_analysis.iloc[0]['performance_score_mean']:.2f})")
             print(f"Worst value: {param_analysis.index[-1]} (Score: {param_analysis.iloc[-1]['performance_score_mean']:.2f})")
-            print(f"Range impact: {param_analysis.iloc[0]['performance_score_mean'] - param_analysis.iloc[-1]['performance_score_mean']:.2f}")
+            print(
+                f"Range impact: {
+                    param_analysis.iloc[0]['performance_score_mean'] -
+                    param_analysis.iloc[-1]['performance_score_mean']:.2f
+                }"
+            )
 
     def create_analysis_plots(self, df):
         """Create comprehensive analysis plots"""
@@ -361,7 +376,10 @@ class Req3ParameterTuner:
         axes[1, 1].set_title('Compliance Rate by Learning Rate Range')
         axes[1, 1].set_ylabel('Compliance Rate (%)')
         axes[1, 1].set_xticks(range(len(compliance_by_lr)))
-        axes[1, 1].set_xticklabels([f'{interval.left:.3f}-{interval.right:.3f}' for interval in compliance_by_lr.index], rotation=45)
+        axes[1, 1].set_xticklabels([
+            f'{interval.left:.3f}-{interval.right:.3f}'
+            for interval in compliance_by_lr.index
+        ], rotation=45)
         axes[1, 1].grid(True, alpha=0.3)
 
         # Plot 6: Performance Score Heatmap (Learning Rate vs Base Temperature)
@@ -479,7 +497,7 @@ def main():
 
     except Exception as e:
         print(f"\n❌ Error during fine-tuning: {e}")
-        traceback.print_exc()        
+        traceback.print_exc()
     except KeyboardInterrupt:
         print("\n⏹️  Fine-tuning interrupted by user.")
         if tuner.results:
