@@ -4,7 +4,7 @@ Overnight Parameter Tuning for Primal-Dual Algorithms
 Requirement 4: Multi-Product Pricing
 
 This script performs comprehensive parameter tuning for both PrimalDualSeller 
-and ImprovedPrimalDualSeller focusing on requirement 4 with compliance as the primary metric.
+and PrimalDualSeller focusing on requirement 4 with compliance as the primary metric.
 """
 
 import numpy as np
@@ -25,7 +25,7 @@ sys.path.append('/Users/frain/Documents/GitHub/ola-proj-2425/project_work')
 
 from base_classes.setting import Setting
 from base_classes.environment import Environment
-from base_classes.specialized_sellers import PrimalDualSeller, ImprovedPrimalDualSeller
+from base_classes.specialized_sellers import PrimalDualSeller
 
 class ParameterTuner:
     """Comprehensive parameter tuning for primal-dual algorithms - Requirement 4 only"""
@@ -43,7 +43,7 @@ class ParameterTuner:
             'regret_learning_rate': [0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5]
         }
         
-        # ImprovedPrimalDualSeller parameters - expanded grid
+        # PrimalDualSeller parameters - expanded grid
         self.improved_params = {
             'learning_rate': [0.0001, 0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05],
             'regret_learning_rate': [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1],
@@ -61,7 +61,7 @@ class ParameterTuner:
         
         print(f"📊 Parameter Grid Summary (Requirement 4 only):")
         print(f"   PrimalDualSeller combinations: {len(self.primal_dual_combinations)}")
-        print(f"   ImprovedPrimalDualSeller combinations: {len(self.improved_combinations)}")
+        print(f"   PrimalDualSeller combinations: {len(self.improved_combinations)}")
         print(f"   Total combinations: {len(self.primal_dual_combinations) + len(self.improved_combinations)}")
         
     def run_single_experiment(self, algorithm_class, params, setting, seed):
@@ -80,7 +80,7 @@ class ParameterTuner:
                 learning_rate=params[0],
                 regret_learning_rate=params[1]
             )
-        else:  # ImprovedPrimalDualSeller
+        else:  # PrimalDualSeller
             seller = algorithm_class(
                 setting=setting,
                 learning_rate=params[0],
@@ -203,7 +203,7 @@ class ParameterTuner:
                     
                     pbar.update(1)
             
-            # Test ImprovedPrimalDualSeller
+            # Test PrimalDualSeller
             for i, params in enumerate(self.improved_combinations):
                 param_dict = dict(zip(self.improved_params.keys(), params))
                 
@@ -212,13 +212,13 @@ class ParameterTuner:
                     
                     try:
                         metrics = self.run_single_experiment(
-                            ImprovedPrimalDualSeller, params, setting, seed
+                            PrimalDualSeller, params, setting, seed
                         )
                         
                         # Store results
                         result = {
                             'requirement': 'req4',
-                            'algorithm': 'ImprovedPrimalDualSeller', 
+                            'algorithm': 'PrimalDualSeller', 
                             'seed': seed,
                             'params': param_dict.copy(),
                             **metrics,
@@ -630,7 +630,7 @@ def main():
     print("🎯 REQUIREMENT 4 PARAMETER TUNING - COMPLIANCE PARAMOUNT")
     print("=" * 60)
     print("Multi-product pricing with compliance as the primary metric")
-    print("Algorithms: PrimalDualSeller & ImprovedPrimalDualSeller")
+    print("Algorithms: PrimalDualSeller & PrimalDualSeller")
     print()
     
     # Initialize tuner

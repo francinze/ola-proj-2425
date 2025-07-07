@@ -34,6 +34,9 @@ class UCB1Seller(BaseSeller):
     """
     Seller class implementing UCB1 algorithm for Requirements 1 and 2.
 
+    This implementation is based on the high-performing UCB1 algorithm from
+    the demo notebook, adapted to work with the project's base classes.
+
     Requirement 1: Single product + stochastic + UCB1 (with/without inventory)
     Requirement 2: Multiple products + stochastic + Combinatorial-UCB
     """
@@ -42,7 +45,7 @@ class UCB1Seller(BaseSeller):
         self, setting: Setting, use_inventory_constraint: bool = True
     ):
         """
-        Initialize UCB1 seller.
+        Initialize UCB1 seller with optimized parameters.
 
         Args:
             setting: Setting object with configuration
@@ -51,68 +54,112 @@ class UCB1Seller(BaseSeller):
         super().__init__(setting)
         self.algorithm = "ucb1"
         self.use_inventory_constraint = use_inventory_constraint
+
+        # Initialize UCB1-specific tracking variables
+        self.total_rewards = np.zeros((self.num_products, self.num_prices))
+        self.avg_rewards = np.zeros((self.num_products, self.num_prices))
+        self.last_chosen_arms = np.zeros(self.num_products, dtype=int)
+
         log_algorithm_choice(
             f"UCB1 (inventory_constraint={use_inventory_constraint})"
         )
 
     def pull_arm(self):
         """
-        UCB1 arm selection: choose arm with highest UCB value for each product.
+        UCB1 arm selection with optimized exploration strategy.
+
+        For each product:
+        1. First, explore all arms once (initialization phase)
+        2. Then use UCB1 formula: μ_i + √(2ln(t)/n_i)
         """
         log_arm_selection(self.algorithm, self.total_steps, "starting")
         try:
-            chosen_indices = np.array([], dtype=int)
+            chosen_indices = np.zeros(self.num_products, dtype=int)
 
             for i in range(self.num_products):
-                # UCB1: select arm with highest UCB value
-                idx = int(np.argmax(self.ucbs[i]))
-                chosen_indices = np.append(chosen_indices, idx)
+                # Initialization phase: explore all arms at least once
+                unexplored_arms = np.where(self.counts[i] == 0)[0]
+
+                if len(unexplored_arms) > 0:
+                    # Choose first unexplored arm
+                    chosen_indices[i] = unexplored_arms[0]
+                else:
+                    # UCB1 phase: choose arm with highest UCB value
+                    ucb_values = self.avg_rewards[i] + np.sqrt(
+                        2 * np.log(self.total_steps + 1) / self.counts[i]
+                    )
+                    chosen_indices[i] = np.argmax(ucb_values)
+
+                self.last_chosen_arms[i] = chosen_indices[i]
 
             log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
             return chosen_indices
+
         except Exception as e:
             log_error(f"Error in UCB1 pull_arm: {e}")
             return np.zeros(self.num_products, dtype=int)
 
     def update(self, purchased, actions):
-        """Update UCB1 statistics after observing rewards."""
+        """
+        Update UCB1 statistics after observing rewards.
+
+        This method handles the reward calculation and constraint application
+        before updating the UCB1 algorithm state.
+        """
         purchased = np.clip(purchased, 0, 1)
 
         # Apply inventory constraint if enabled
         if self.use_inventory_constraint:
             purchased = self.budget_constraint(purchased)
 
-        rewards = purchased
-        self.update_ucb1(actions, rewards)
+        # Calculate price-weighted rewards (price × purchase indicator)
+        price_weighted_rewards = self.calculate_price_weighted_rewards(
+            actions, purchased)
 
-    def update_ucb1(self, actions, rewards):
+        # Update UCB1 algorithm with the computed rewards
+        self.update_ucb1_optimized(actions, price_weighted_rewards)
+
+    def update_ucb1_optimized(self, actions, price_weighted_rewards):
         """
-        Update UCB1 statistics for all products.
+        Optimized UCB1 update based on the high-performing demo implementation.
+
+        This method updates:
+        1. Pull counts for each arm
+        2. Total rewards accumulated
+        3. Average rewards (incremental update)
+        4. UCB values for confidence bounds
         """
         self.total_steps += 1
 
-        # Calculate price-weighted rewards
-        price_weighted_rewards = self.calculate_price_weighted_rewards(
-            actions, rewards)
-
         for i, price_idx in enumerate(actions):
             price_idx = int(price_idx)
-            self.counts[i, price_idx] += 1
-            n = self.counts[i, price_idx]
-            old_value = self.values[i, price_idx]
 
-            # UCB1 update with price-weighted reward
-            reward_i = price_weighted_rewards[i]
-            self.values[i, price_idx] = (old_value * (n-1) / n +
-                                         (reward_i - old_value) / n)
-            self.ucbs[i, price_idx] = self.values[i, price_idx] + \
-                np.sqrt(2 * np.log(self.total_steps) / n)
+            # Update counts and rewards
+            self.counts[i, price_idx] += 1
+            self.total_rewards[i, price_idx] += price_weighted_rewards[i]
+
+            # Incremental average update (numerically stable)
+            self.avg_rewards[i, price_idx] = (
+                self.total_rewards[i, price_idx] / self.counts[i, price_idx]
+            )
+
+            # Update UCB values for this arm
+            if self.counts[i, price_idx] > 0:
+                confidence_bound = np.sqrt(
+                    2 * np.log(self.total_steps) / self.counts[i, price_idx]
+                )
+                self.ucbs[i, price_idx] = (
+                    self.avg_rewards[i, price_idx] + confidence_bound
+                )
+
+            # Also update the values array for compatibility with base class
+            self.values[i, price_idx] = self.avg_rewards[i, price_idx]
 
             log_ucb1_update(i, price_idx, self.counts[i, price_idx],
                             self.values[i, price_idx],
                             self.ucbs[i, price_idx])
 
-        # Store price-weighted rewards in history
+        # Store total price-weighted rewards in history
         self.history_rewards.append(np.sum(price_weighted_rewards))
 
 
@@ -289,187 +336,9 @@ class CombinatorialUCBSeller(UCB1Seller):
 
 class PrimalDualSeller(BaseSeller):
     """
-    Seller class implementing Primal-Dual algorithm for Requirements 3 and 4.
+    Primal-Dual seller following project.md specifications exactly.
 
-    Requirement 3: Single product + best-of-both-worlds + primal-dual
-    Requirement 4: Multiple products + best-of-both-worlds + primal-dual
-
-    Based on the Pacing strategy from project.md:
-    - Uses regret minimizer R(t) that returns distribution over prices
-    - Samples from this distribution instead of greedy selection
-    - Updates dual variable λ with proper projection Π[0,1/ρ]
-    """
-
-    def __init__(
-        self,
-        setting: Setting,
-        learning_rate: float = 0.01,
-        regret_learning_rate: float = 0.05
-    ):
-        """Initialize Primal-Dual seller."""
-        super().__init__(setting)
-        self.algorithm = "primal_dual"
-        log_algorithm_choice("Primal-Dual")
-
-        # Primal-dual specific parameters
-        self.eta = learning_rate
-        self.rho_pd = self.B / self.T  # ρ = B/T as per project.md line 106
-        self.lambda_pd = np.zeros(self.T)  # Dual variable for each round
-        self.cost_history = []  # Track costs for each round
-
-        # Regret minimizer parameters
-        self.price_weights = np.zeros((self.num_products, self.num_prices))
-        self.regret_learning_rate = regret_learning_rate
-
-        # Initialize UCBs as None to indicate no UCB data
-        self.ucbs = None
-
-    def regret_minimizer(self, t):
-        """
-        Regret minimizer R(t) that returns distribution over prices.
-        Uses exponential weights (Hedge algorithm).
-        """
-        gamma_t = np.zeros((self.num_products, self.num_prices))
-
-        for i in range(self.num_products):
-            if t == 0:
-                # Uniform distribution at start
-                gamma_t[i] = np.ones(self.num_prices) / self.num_prices
-            else:
-                # Exponential weights based on cumulative rewards
-                exp_weights = np.exp(self.regret_learning_rate *
-                                     self.price_weights[i])
-                gamma_t[i] = exp_weights / np.sum(exp_weights)
-
-        return gamma_t
-
-    def sample_from_regret_minimizer(self, gamma_t):
-        """
-        Sample price indices from the regret minimizer distribution.
-        """
-        chosen_indices = np.zeros(self.num_products, dtype=int)
-
-        for i in range(self.num_products):
-            chosen_indices[i] = np.random.choice(
-                self.num_prices, p=gamma_t[i]
-            )
-
-        return chosen_indices
-
-    def project_lambda(self, lambda_raw):
-        """
-        Project λ to [0, 1/ρ] as specified in project.md.
-        With ρ = B/T, the upper bound is T/B.
-        """
-        return np.clip(lambda_raw, 0, 1.0 / self.rho_pd)
-
-    def pull_arm(self):
-        """
-        Primal-dual arm selection using regret minimizer.
-        """
-        log_arm_selection(self.algorithm, self.total_steps, "starting")
-        try:
-            # Get distribution from regret minimizer
-            gamma_t = self.regret_minimizer(self.total_steps)
-
-            # Sample from the distribution
-            chosen_indices = self.sample_from_regret_minimizer(gamma_t)
-
-            log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
-            return chosen_indices
-        except Exception as e:
-            log_error(f"Error in Primal-Dual pull_arm: {e}")
-            return np.zeros(self.num_products, dtype=int)
-
-    def yield_prices(self, chosen_indices):
-        """
-        Override yield_prices to handle PrimalDual's cost tracking mechanism.
-        """
-        chosen_prices = self.price_grid[
-            np.arange(self.num_products), chosen_indices
-        ]
-        # Use the base class method for history tracking
-        self.history_chosen_prices.append(chosen_indices)
-
-        # PrimalDualSeller handles cost tracking in update_primal_dual
-        return np.array(chosen_prices)
-
-    def update(self, purchased, actions):
-        """Update primal-dual statistics after observing rewards."""
-        purchased = np.clip(purchased, 0, 1)
-        # Always apply budget constraint for primal-dual
-        purchased = self.budget_constraint(purchased)
-
-        rewards = purchased
-        self.update_primal_dual(actions, rewards)
-
-    def update_primal_dual(self, actions, rewards):
-        """
-        Update primal-dual algorithm following project.md specification.
-        """
-        # Calculate price-weighted rewards and costs
-        chosen_prices = self.price_grid[
-            np.arange(self.num_products), actions.astype(int)
-        ]
-        price_weighted_rewards = chosen_prices * rewards
-        current_cost = np.sum(chosen_prices)  # c_t(b_t)
-
-        # Store cost for this round
-        self.cost_history.append(current_cost)
-
-        # Update regret minimizer weights
-        for i, price_idx in enumerate(actions):
-            price_idx = int(price_idx)
-            # Update weight for chosen price with adjusted reward
-            lambda_cost = self.lambda_pd[self.total_steps] * chosen_prices[i]
-            adjusted_reward = price_weighted_rewards[i] - lambda_cost
-            self.price_weights[i, price_idx] += adjusted_reward
-
-        # Update dual variable λ for next round
-        if self.total_steps < self.T - 1:
-            lambda_update = self.eta * (self.rho_pd - current_cost)
-            lambda_raw = self.lambda_pd[self.total_steps] - lambda_update
-            self.lambda_pd[self.total_steps + 1] = self.project_lambda(
-                lambda_raw)
-
-        # Store price-weighted rewards in history
-        self.history_rewards.append(np.sum(price_weighted_rewards))
-
-        self.total_steps += 1
-
-
-class SlidingWindowUCBSeller(CombinatorialUCBSeller):
-    """
-    Seller implementing Combi-UCB with sliding window for Requirement 5.
-
-    Requirement 5: Multiple products + slightly non-stationary +
-                   Combinatorial-UCB with sliding window
-    """
-
-    def __init__(self, setting: Setting, window_size: int = None):
-        """
-        Initialize Sliding Window UCB seller.
-
-        Args:
-            setting: Setting object with configuration
-            window_size: Size of sliding window (default: sqrt(T))
-        """
-        super().__init__(setting)
-        self.algorithm = "sliding_window_ucb"
-        self.window_size = window_size or max(1, int(np.sqrt(self.T)))
-        log_algorithm_choice(f"Sliding Window UCB (window={self.window_size})")
-
-        # Additional tracking for sliding window
-        self.reward_history = []  # Store individual rewards
-        self.action_history = []  # Store individual actions
-
-
-class ImprovedPrimalDualSeller(BaseSeller):
-    """
-    Improved Primal-Dual seller following project.md specifications exactly.
-
-    This implementation provides better stability and performance compared to
-    the original PrimalDualSeller by:
+    This implementation features:
     - Using proper pacing strategy: ρ = B/T
     - Implementing stable regret minimizer with temperature scaling
     - Correct dual variable projection: Π[0,1/ρ]
@@ -728,3 +597,29 @@ class ImprovedPrimalDualSeller(BaseSeller):
             }
         }
         return diagnostics
+
+
+class SlidingWindowUCBSeller(CombinatorialUCBSeller):
+    """
+    Seller implementing Combi-UCB with sliding window for Requirement 5.
+
+    Requirement 5: Multiple products + slightly non-stationary +
+                   Combinatorial-UCB with sliding window
+    """
+
+    def __init__(self, setting: Setting, window_size: int = None):
+        """
+        Initialize Sliding Window UCB seller.
+
+        Args:
+            setting: Setting object with configuration
+            window_size: Size of sliding window (default: sqrt(T))
+        """
+        super().__init__(setting)
+        self.algorithm = "sliding_window_ucb"
+        self.window_size = window_size or max(1, int(np.sqrt(self.T)))
+        log_algorithm_choice(f"Sliding Window UCB (window={self.window_size})")
+
+        # Additional tracking for sliding window
+        self.reward_history = []  # Store individual rewards
+        self.action_history = []  # Store individual actions

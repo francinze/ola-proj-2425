@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Requirement 3 Parameter Tuning: Fine-tuning ImprovedPrimalDualSeller
-Goal: Find optimal parameters for ImprovedPrimalDualSeller
+Requirement 3 Parameter Tuning: Fine-tuning PrimalDualSeller
+Goal: Find optimal parameters for PrimalDualSeller
 """
 
 import numpy as np
@@ -16,21 +16,21 @@ import warnings
 
 from base_classes.setting import Setting
 from base_classes.environment import Environment
-from base_classes.specialized_sellers import ImprovedPrimalDualSeller
+from base_classes.specialized_sellers import PrimalDualSeller
 warnings.filterwarnings('ignore')
 
 
 class Req3ParameterTuner:
-    """Parameter tuning focused on fine-tuning ImprovedPrimalDualSeller"""
+    """Parameter tuning focused on fine-tuning PrimalDualSeller"""
 
     def __init__(self):
         self.results = []
         self.start_time = None
 
     def define_parameter_grids(self):
-        """Define expanded parameter grids for ImprovedPrimalDualSeller fine-tuning"""
+        """Define expanded parameter grids for PrimalDualSeller fine-tuning"""
 
-        # Expanded ImprovedPrimalDualSeller parameters for fine-tuning
+        # Expanded PrimalDualSeller parameters for fine-tuning
         self.improved_params = {
             'learning_rate': [
                 0.001, 0.003, 0.005, 0.007, 0.01, 0.015, 0.02, 0.03, 0.05
@@ -48,7 +48,7 @@ class Req3ParameterTuner:
             *self.improved_params.values()
         ))
 
-        print("📊 Fine-tuning Parameter Grid for ImprovedPrimalDualSeller:")
+        print("📊 Fine-tuning Parameter Grid for PrimalDualSeller:")
         print(
             f"   Learning rates: {len(self.improved_params['learning_rate'])}"
         )
@@ -73,8 +73,8 @@ class Req3ParameterTuner:
         # Create environment
         env = Environment(setting)
 
-        # Create ImprovedPrimalDualSeller with specific parameters
-        seller = ImprovedPrimalDualSeller(
+        # Create PrimalDualSeller with specific parameters
+        seller = PrimalDualSeller(
             setting=setting,
             learning_rate=params[0],
             regret_learning_rate=params[1],
@@ -121,15 +121,15 @@ class Req3ParameterTuner:
         return 1.0 / (np.var(regrets) + 1e-6)
 
     def run_comprehensive_tuning(self, seeds=[42, 123, 789, 456, 999]):
-        """Run comprehensive parameter tuning for ImprovedPrimalDualSeller"""
+        """Run comprehensive parameter tuning for PrimalDualSeller"""
 
         self.start_time = time.time()
         print(
-            f"🚀 Starting ImprovedPrimalDualSeller fine-tuning at {
+            f"🚀 Starting PrimalDualSeller fine-tuning at {
                 datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }"
         )
-        print("   Goal: Find optimal parameters for ImprovedPrimalDualSeller")
+        print("   Goal: Find optimal parameters for PrimalDualSeller")
         print(f"   Seeds: {seeds}")
         print("=" * 70)
 
@@ -156,7 +156,7 @@ class Req3ParameterTuner:
             bar_format=bar_fmt
         ) as pbar:
 
-            # Test ImprovedPrimalDualSeller combinations
+            # Test PrimalDualSeller combinations
             for i, params in enumerate(self.improved_combinations):
                 param_dict = dict(zip(self.improved_params.keys(), params))
 
@@ -174,7 +174,7 @@ class Req3ParameterTuner:
 
                         # Store results
                         result = {
-                            'algorithm': 'ImprovedPrimalDualSeller',
+                            'algorithm': 'PrimalDualSeller',
                             'seed': seed,
                             'params': param_dict.copy(),
                             **metrics,
@@ -188,7 +188,7 @@ class Req3ParameterTuner:
                     pbar.update(1)
 
         elapsed_time = time.time() - self.start_time
-        print(f"\n✅ ImprovedPrimalDualSeller fine-tuning completed!")
+        print(f"\n✅ PrimalDualSeller fine-tuning completed!")
         print(f"   Total time: {elapsed_time/60:.1f} minutes")
         print(f"   Results collected: {len(self.results)}")
 
@@ -301,7 +301,7 @@ class Req3ParameterTuner:
         print("\n📈 Creating analysis plots...")
 
         fig, axes = plt.subplots(2, 3, figsize=(18, 12))
-        fig.suptitle('ImprovedPrimalDualSeller Fine-tuning Analysis',
+        fig.suptitle('PrimalDualSeller Fine-tuning Analysis',
                      fontsize=16, fontweight='bold')
 
         # Plot 1: Performance Score Distribution
@@ -438,7 +438,7 @@ def main():
 
     print("🎯 IMPROVED PRIMAL-DUAL FINE-TUNING")
     print("=" * 50)
-    print("Goal: Find optimal parameters for ImprovedPrimalDualSeller")
+    print("Goal: Find optimal parameters for PrimalDualSeller")
     print("Setting: Single product, highly non-stationary environment")
     print()
 
@@ -468,7 +468,7 @@ def main():
         # Analyze results
         results_df = tuner.analyze_results()
 
-        print("\n🎉 ImprovedPrimalDualSeller fine-tuning completed!")
+        print("\n🎉 PrimalDualSeller fine-tuning completed!")
         print("   Check the generated files for optimal parameter configuration.")
 
     except KeyboardInterrupt:
