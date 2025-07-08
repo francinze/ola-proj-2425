@@ -13,7 +13,7 @@ class Buyer:
         self.name = name
         self.setting = setting
         self.verbose = setting.verbose == 'all' or setting.verbose == 'buyer'
-        self.valuations: np.ndarray[float, Any] = np.zeros(setting.n_products)
+        self.valuations = np.zeros((setting.n_buyers, setting.n_products))
         self.T = setting.T  # Total number of rounds
         self.dist_params = dist_params  # Parameters for the valuation distribution
 
@@ -38,10 +38,10 @@ class Buyer:
             self.valuations = np.clip(self.valuations, 0, 1)
         elif setting.distribution == "exponential":
             # mean=0.5, scale=0.5, clipped to [0,1]
-            mean = self.dist_params[0] if self.dist_params != None and len(self.dist_params) > 0 else 0.5
+            # mean = self.dist_params[0] if self.dist_params != None and len(self.dist_params) > 0 else 0.5
             scale = self.dist_params[1] if self.dist_params != None and len(self.dist_params) > 1 else 0.5
             self.valuations = np.clip(
-                np.random.exponential(mean=mean, scale=scale, size=setting.n_products), 0, 1
+                np.random.exponential(scale=scale, size=setting.n_products), 0, 1
             )
         elif setting.distribution == "beta":
             # Beta(2,5) is skewed toward 0, Beta(5,2) toward 1
@@ -78,21 +78,19 @@ class Buyer:
     def __repr__(self):
         return f"Buyer number {self.name}"
 
-    def yield_demand(self, prices: np.ndarray[float, Any]) -> List[float]:
+    def yield_demand(self, prices: np.ndarray) -> np.ndarray:
         """
-        Make purchases based on the given prices.
-        :param prices: A list of prices for the products.
-        :return: A list of purchased products.
+        Make purchases based on buyer valuations and prices.
+        :param prices: A (num_products,) array of prices.
+        :return: A (num_products,) array representing total demand per product.
         """
-        purchased_products: List[float] = []
-        if self.verbose:
-            print(f"{self.name} valuations: {self.valuations}")
-            print(f"{self.name} prices: {prices}")
-        for i, price in enumerate(prices):
-            if self.valuations[i] > price:
-                purchased_products.append(price)
-            else:
-                purchased_products.append(0)
-        if self.verbose:
-            print(f"{self.name} purchased products: {purchased_products}")
-        return purchased_products
+        prices = np.asarray(prices).reshape(1, -1)  # shape (1, n_products)
+        prices = np.tile(prices, (self.setting.n_buyers, 1))  # shape (n_buyers, n_products)
+
+        # Each buyer purchases product i if valuation > price
+        willingness = self.valuations - prices
+        demand = (willingness > 0).astype(int)  # shape (n_buyers, n_products)
+
+        total_demand = np.sum(demand, axis=0)  # shape (n_products,)
+
+        return total_demand

@@ -21,6 +21,7 @@ class Setting:
         dist_params: float = (0.1, 0.9),
         
     ):
+        self.n_buyers = 300
         self.T = T
         self.n_products = n_products
         self.cost_coeff = 0.5
