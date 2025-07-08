@@ -143,7 +143,7 @@ Build a slightly non-stationary environment for the pricing problem. At a high l
 
 ### R5 Algorithm
 
-Extend Combinatorial-UCB withsliding window
+Extend Combinatorial-UCB with sliding window
 
 ### Compare
 
