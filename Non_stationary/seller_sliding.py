@@ -173,7 +173,7 @@ class SellerSliding:
         """
         demand = np.array(demand)
         binary_purchases = (demand > 0).astype(np.int32).reshape(-1)  # ensures int
-        print("DEBUG -- budget_constraint returning:", binary_purchases)
-        print("DEBUG -- budget_constraint return shape:", binary_purchases.shape)
-        print("DEBUG -- budget_constraint return dtype:", binary_purchases.dtype)
+        #print("DEBUG -- budget_constraint returning:", binary_purchases)
+        #print("DEBUG -- budget_constraint return shape:", binary_purchases.shape)
+        #print("DEBUG -- budget_constraint return dtype:", binary_purchases.dtype)
         return binary_purchases
