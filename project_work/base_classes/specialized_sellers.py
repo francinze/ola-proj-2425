@@ -5,129 +5,28 @@ Each class extends the base Seller class with specific algorithms.
 import numpy as np
 from .seller import Seller
 from .setting import Setting
-from .logger import (log_error, log_algorithm_choice,
+from .logger import (log_algorithm_choice,
                      log_ucb1_update, log_arm_selection)
 
 
-class BaseSeller(Seller):
+class UCBBaseSeller(Seller):
     """
-    Base seller class with common functionality for all specialized sellers.
-    This extends the original Seller class to be more modular.
+    Base class for UCB-based sellers with common functionality.
     """
 
-    def __init__(self, setting: Setting):
-        """Initialize base seller with common functionality."""
+    def __init__(self, setting: Setting,
+                 use_inventory_constraint: bool = True):
+        """Initialize UCB base seller."""
         super().__init__(setting)
-
-    def calculate_price_weighted_rewards(self, actions, rewards):
-        """
-        Calculate price-weighted rewards (price × purchase).
-        Common utility method used by all specialized sellers.
-        """
-        chosen_prices = self.price_grid[
-            np.arange(self.num_products), actions.astype(int)
-        ]
-        return chosen_prices * rewards
-
-
-class UCB1Seller(BaseSeller):
-    """
-    Seller class implementing UCB1 algorithm for Requirements 1 and 2.
-
-    This implementation is based on the high-performing UCB1 algorithm from
-    the demo notebook, adapted to work with the project's base classes.
-
-    Requirement 1: Single product + stochastic + UCB1 (with/without inventory)
-    Requirement 2: Multiple products + stochastic + Combinatorial-UCB
-    """
-
-    def __init__(
-        self, setting: Setting, use_inventory_constraint: bool = True
-    ):
-        """
-        Initialize UCB1 seller with optimized parameters.
-
-        Args:
-            setting: Setting object with configuration
-            use_inventory_constraint: Whether to enforce inventory constraints
-        """
-        super().__init__(setting)
-        self.algorithm = "ucb1"
         self.use_inventory_constraint = use_inventory_constraint
 
-        # Initialize UCB1-specific tracking variables
+        # Common UCB tracking variables
         self.total_rewards = np.zeros((self.num_products, self.num_prices))
         self.avg_rewards = np.zeros((self.num_products, self.num_prices))
-        self.last_chosen_arms = np.zeros(self.num_products, dtype=int)
 
-        log_algorithm_choice(
-            f"UCB1 (inventory_constraint={use_inventory_constraint})"
-        )
-
-    def pull_arm(self):
+    def update_ucb_statistics(self, actions, price_weighted_rewards):
         """
-        UCB1 arm selection with optimized exploration strategy.
-
-        For each product:
-        1. First, explore all arms once (initialization phase)
-        2. Then use UCB1 formula: μ_i + √(2ln(t)/n_i)
-        """
-        log_arm_selection(self.algorithm, self.total_steps, "starting")
-        try:
-            chosen_indices = np.zeros(self.num_products, dtype=int)
-
-            for i in range(self.num_products):
-                # Initialization phase: explore all arms at least once
-                unexplored_arms = np.where(self.counts[i] == 0)[0]
-
-                if len(unexplored_arms) > 0:
-                    # Choose first unexplored arm
-                    chosen_indices[i] = unexplored_arms[0]
-                else:
-                    # UCB1 phase: choose arm with highest UCB value
-                    ucb_values = self.avg_rewards[i] + np.sqrt(
-                        2 * np.log(self.total_steps + 1) / self.counts[i]
-                    )
-                    chosen_indices[i] = np.argmax(ucb_values)
-
-                self.last_chosen_arms[i] = chosen_indices[i]
-
-            log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
-            return chosen_indices
-
-        except Exception as e:
-            log_error(f"Error in UCB1 pull_arm: {e}")
-            return np.zeros(self.num_products, dtype=int)
-
-    def update(self, purchased, actions):
-        """
-        Update UCB1 statistics after observing rewards.
-
-        This method handles the reward calculation and constraint application
-        before updating the UCB1 algorithm state.
-        """
-        purchased = np.clip(purchased, 0, 1)
-
-        # Apply inventory constraint if enabled
-        if self.use_inventory_constraint:
-            purchased = self.budget_constraint(purchased)
-
-        # Calculate price-weighted rewards (price × purchase indicator)
-        price_weighted_rewards = self.calculate_price_weighted_rewards(
-            actions, purchased)
-
-        # Update UCB1 algorithm with the computed rewards
-        self.update_ucb1_optimized(actions, price_weighted_rewards)
-
-    def update_ucb1_optimized(self, actions, price_weighted_rewards):
-        """
-        Optimized UCB1 update based on the high-performing demo implementation.
-
-        This method updates:
-        1. Pull counts for each arm
-        2. Total rewards accumulated
-        3. Average rewards (incremental update)
-        4. UCB values for confidence bounds
+        Common UCB statistics update method.
         """
         self.total_steps += 1
 
@@ -161,6 +60,89 @@ class UCB1Seller(BaseSeller):
 
         # Store total price-weighted rewards in history
         self.history_rewards.append(np.sum(price_weighted_rewards))
+
+
+class UCB1Seller(UCBBaseSeller):
+    """
+    Seller class implementing UCB1 algorithm for Requirements 1 and 2.
+
+    This implementation is based on the high-performing UCB1 algorithm from
+    the demo notebook, adapted to work with the project's base classes.
+
+    Requirement 1: Single product + stochastic + UCB1 (with/without inventory)
+    Requirement 2: Multiple products + stochastic + Combinatorial-UCB
+    """
+
+    def __init__(
+        self, setting: Setting, use_inventory_constraint: bool = True
+    ):
+        """
+        Initialize UCB1 seller with optimized parameters.
+
+        Args:
+            setting: Setting object with configuration
+            use_inventory_constraint: Whether to enforce inventory constraints
+        """
+        super().__init__(setting, use_inventory_constraint)
+        self.algorithm = "ucb1"
+
+        # UCB1-specific tracking variables
+        self.last_chosen_arms = np.zeros(self.num_products, dtype=int)
+
+        log_algorithm_choice(
+            f"UCB1 (inventory_constraint={use_inventory_constraint})"
+        )
+
+    def pull_arm(self):
+        """
+        UCB1 arm selection with optimized exploration strategy.
+
+        For each product:
+        1. First, explore all arms once (initialization phase)
+        2. Then use UCB1 formula: μ_i + √(2ln(t)/n_i)
+        """
+        def ucb1_selection():
+            chosen_indices = np.zeros(self.num_products, dtype=int)
+
+            for i in range(self.num_products):
+                # Initialization phase: explore all arms at least once
+                unexplored_arms = np.where(self.counts[i] == 0)[0]
+
+                if len(unexplored_arms) > 0:
+                    # Choose first unexplored arm
+                    chosen_indices[i] = unexplored_arms[0]
+                else:
+                    # UCB1 phase: choose arm with highest UCB value
+                    ucb_values = self.avg_rewards[i] + np.sqrt(
+                        2 * np.log(self.total_steps + 1) / self.counts[i]
+                    )
+                    chosen_indices[i] = np.argmax(ucb_values)
+
+                self.last_chosen_arms[i] = chosen_indices[i]
+
+            log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
+            return chosen_indices
+
+        return self.safe_pull_arm(ucb1_selection)
+
+    def update(self, purchased, actions):
+        """
+        Update UCB1 statistics after observing rewards.
+
+        This method handles the reward calculation and constraint application
+        before updating the UCB1 algorithm state.
+        """
+        # Apply constraints and get processed rewards
+        purchased = self.apply_constraints_and_calculate_rewards(
+            purchased, actions, self.use_inventory_constraint
+        )
+
+        # Calculate price-weighted rewards (price × purchase indicator)
+        price_weighted_rewards = self.calculate_price_weighted_rewards(
+            actions, purchased)
+
+        # Update UCB1 algorithm with the computed rewards
+        self.update_ucb_statistics(actions, price_weighted_rewards)
 
 
 class CombinatorialUCBSeller(UCB1Seller):
@@ -267,8 +249,7 @@ class CombinatorialUCBSeller(UCB1Seller):
         """
         Combinatorial-UCB arm selection following the LP-based approach.
         """
-        log_arm_selection(self.algorithm, self.total_steps, "starting")
-        try:
+        def combinatorial_selection():
             # Compute UCB bounds for rewards and LCB bounds for costs
             ucb_rewards, lcb_costs = self.compute_ucb_lcb_bounds()
 
@@ -280,17 +261,15 @@ class CombinatorialUCBSeller(UCB1Seller):
 
             log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
             return chosen_indices
-        except Exception as e:
-            log_error(f"Error in Combinatorial-UCB pull_arm: {e}")
-            return np.zeros(self.num_products, dtype=int)
+
+        return self.safe_pull_arm(combinatorial_selection)
 
     def update(self, purchased, actions):
         """Update Combinatorial-UCB statistics after observing rewards."""
-        purchased = np.clip(purchased, 0, 1)
-
-        # Apply inventory constraint
-        if self.use_inventory_constraint:
-            purchased = self.budget_constraint(purchased)
+        # Apply constraints and get processed rewards
+        purchased = self.apply_constraints_and_calculate_rewards(
+            purchased, actions, self.use_inventory_constraint
+        )
 
         rewards = purchased
         self.update_combinatorial_ucb(actions, rewards)
@@ -334,7 +313,7 @@ class CombinatorialUCBSeller(UCB1Seller):
         self.history_rewards.append(np.sum(price_weighted_rewards))
 
 
-class PrimalDualSeller(BaseSeller):
+class PrimalDualSeller(Seller):
     """
     Primal-Dual seller following project.md specifications exactly.
 
@@ -440,8 +419,7 @@ class PrimalDualSeller(BaseSeller):
         Returns:
             numpy.ndarray: Array of chosen price indices (one per product)
         """
-        log_arm_selection(self.algorithm, self.total_steps, "starting")
-        try:
+        def primal_dual_selection():
             chosen_indices = np.zeros(self.num_products, dtype=int)
 
             for i in range(self.num_products):
@@ -456,9 +434,7 @@ class PrimalDualSeller(BaseSeller):
             log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
             return chosen_indices
 
-        except Exception as e:
-            log_error(f"Error in Improved Primal-Dual pull_arm: {e}")
-            return np.zeros(self.num_products, dtype=int)
+        return self.safe_pull_arm(primal_dual_selection)
 
     def yield_prices(self, chosen_indices):
         """
@@ -480,10 +456,10 @@ class PrimalDualSeller(BaseSeller):
             purchased: Array of purchase outcomes per product
             actions: Array of chosen price indices per product
         """
-        purchased = np.clip(purchased, 0, 1)
-
-        # Always apply budget constraint for primal-dual
-        purchased = self.budget_constraint(purchased)
+        # Apply constraints and get processed rewards
+        purchased = self.apply_constraints_and_calculate_rewards(
+            purchased, actions, use_inventory_constraint=True
+        )
 
         rewards = purchased
         self.update_improved_primal_dual(actions, rewards)
@@ -599,7 +575,7 @@ class PrimalDualSeller(BaseSeller):
         return diagnostics
 
 
-class SlidingWindowUCBSeller(CombinatorialUCBSeller):
+class SlidingWindowUCB1Seller(CombinatorialUCBSeller):
     """
     Seller implementing Combi-UCB with sliding window for Requirement 5.
 
@@ -623,3 +599,173 @@ class SlidingWindowUCBSeller(CombinatorialUCBSeller):
         # Additional tracking for sliding window
         self.reward_history = []  # Store individual rewards
         self.action_history = []  # Store individual actions
+
+        # Sliding window storage using deque for efficient operations
+        from collections import deque
+        # stores tuples of (actions, rewards)
+        self.history = deque(maxlen=self.window_size)
+
+        # Reset counts and values for sliding window approach
+        # Avoid divide-by-zero
+        self.counts = np.ones((self.num_products, self.num_prices)) * 1e-3
+        self.values = np.zeros((self.num_products, self.num_prices))
+        self.ucbs = np.full((self.num_products, self.num_prices), np.inf)
+
+    def pull_arm(self):
+        """
+        Sliding window UCB arm selection.
+        Uses only the data from the sliding window to make decisions.
+        """
+        def sliding_window_selection():
+            # If history is empty, return random actions for exploration
+            if len(self.history) == 0:
+                chosen_indices = np.random.randint(
+                    0, self.num_prices, size=self.num_products
+                )
+                log_arm_selection(
+                    self.algorithm, self.total_steps, chosen_indices
+                )
+                return chosen_indices
+
+            # Recalculate statistics from sliding window
+            self._recalculate_from_window()
+
+            # Use UCB selection
+            chosen_indices = np.zeros(self.num_products, dtype=int)
+            for i in range(self.num_products):
+                # Check for unvisited arms in the current window
+                unvisited_arms = np.where(self.counts[i] <= 1e-3)[0]
+
+                if len(unvisited_arms) > 0:
+                    # Explore unvisited arms first
+                    chosen_indices[i] = unvisited_arms[0]
+                else:
+                    # Use UCB selection
+                    chosen_indices[i] = np.argmax(self.ucbs[i])
+
+            log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
+            return chosen_indices
+
+        return self.safe_pull_arm(sliding_window_selection)
+
+    def _recalculate_from_window(self):
+        """
+        Recalculate UCB statistics from the sliding window data.
+        """
+        # Reset counts and values
+        self.counts = np.ones((self.num_products, self.num_prices)) * 1e-3
+        self.values = np.zeros((self.num_products, self.num_prices))
+
+        # Accumulate statistics from sliding window
+        for actions, rewards in self.history:
+            for i, (action, reward) in enumerate(zip(actions, rewards)):
+                if i >= self.num_products:
+                    continue
+                action = int(action)
+                if action >= self.num_prices:
+                    continue
+
+                self.counts[i, action] += 1
+                self.values[i, action] += reward
+
+        # Calculate means and UCB values
+        means = np.divide(
+            self.values, self.counts,
+            out=np.zeros_like(self.values),
+            where=self.counts > 0
+        )
+        total_counts = np.sum(self.counts)
+
+        # Calculate UCB bounds
+        with np.errstate(divide='ignore', invalid='ignore'):
+            exploration_term = np.sqrt(
+                2 * np.log(total_counts + 1) / self.counts
+            )
+            self.ucbs = means + exploration_term
+            self.ucbs = np.nan_to_num(
+                self.ucbs, nan=0.0, posinf=1e6, neginf=0.0
+            )
+
+        # Set infinite UCB for unvisited arms
+        self.ucbs[self.counts <= 1e-3] = np.inf
+
+        # Update average values
+        self.values = np.divide(
+            self.values, self.counts,
+            out=np.zeros_like(self.values),
+            where=self.counts > 0
+        )
+
+    def update(self, purchased, actions):
+        """
+        Update sliding window UCB statistics after observing rewards.
+        """
+        # Apply constraints and get processed rewards
+        purchased = self.apply_constraints_and_calculate_rewards(
+            purchased, actions, self.use_inventory_constraint
+        )
+
+        # Calculate price-weighted rewards
+        chosen_prices = self.price_grid[
+            np.arange(self.num_products), actions.astype(int)
+        ]
+        price_weighted_rewards = chosen_prices * purchased
+
+        # Update sliding window
+        self.history.append((actions.copy(), price_weighted_rewards.copy()))
+
+        # Store in history for logging
+        self.reward_history.append(price_weighted_rewards.copy())
+        self.action_history.append(actions.copy())
+        self.history_rewards.append(np.sum(price_weighted_rewards))
+
+        # Recalculate statistics from current window
+        self._recalculate_from_window()
+
+        self.total_steps += 1
+
+    def reset(self, setting):
+        """
+        Reset the sliding window UCB seller for a new trial.
+        """
+        super().reset(setting)
+
+        # Reset sliding window specific parameters
+        from collections import deque
+        self.window_size = getattr(
+            setting, 'sliding_window_size', max(1, int(np.sqrt(self.T)))
+        )
+        self.history = deque(maxlen=self.window_size)
+        self.reward_history = []
+        self.action_history = []
+
+        # Reset UCB statistics
+        self.counts = np.ones((self.num_products, self.num_prices)) * 1e-3
+        self.values = np.zeros((self.num_products, self.num_prices))
+        self.ucbs = np.full((self.num_products, self.num_prices), np.inf)
+
+        log_algorithm_choice(
+            f"Reset Sliding Window UCB (window={self.window_size})"
+        )
+
+    def get_diagnostics(self):
+        """
+        Get diagnostic information about the sliding window UCB algorithm.
+        """
+        diagnostics = {
+            'window_size': self.window_size,
+            'current_window_length': len(self.history),
+            'total_actions_taken': len(self.action_history),
+            'window_utilization': (
+                len(self.history) / self.window_size
+                if self.window_size > 0 else 0
+            ),
+            'average_reward_in_window': (
+                np.mean([np.sum(rewards) for _, rewards in self.history])
+                if self.history else 0
+            ),
+            'counts_matrix_shape': self.counts.shape,
+            'values_matrix_shape': self.values.shape,
+            'ucbs_matrix_shape': self.ucbs.shape
+        }
+        return diagnostics

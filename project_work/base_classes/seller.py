@@ -65,6 +65,40 @@ class Seller:
         self.history_rewards = []
         self.history_chosen_prices = []
 
+    def calculate_price_weighted_rewards(self, actions, rewards):
+        """
+        Calculate price-weighted rewards (price × purchase).
+        Common utility method used by specialized sellers.
+        """
+        chosen_prices = self.price_grid[
+            np.arange(self.num_products), actions.astype(int)
+        ]
+        return chosen_prices * rewards
+
+    def safe_pull_arm(self, pull_arm_func):
+        """
+        Common error handling wrapper for pull_arm methods.
+        """
+        log_arm_selection(self.algorithm, self.total_steps, "starting")
+        try:
+            return pull_arm_func()
+        except Exception as e:
+            log_error(f"Error in {self.algorithm} pull_arm: {e}")
+            return np.zeros(self.num_products, dtype=int)
+
+    def apply_constraints_and_calculate_rewards(self, purchased, actions,
+                                                use_inventory_constraint=True):
+        """
+        Common method to apply constraints and calculate rewards.
+        """
+        purchased = np.clip(purchased, 0, 1)
+
+        # Apply inventory constraint if enabled
+        if use_inventory_constraint:
+            purchased = self.budget_constraint(purchased)
+
+        return purchased
+
     def yield_prices(self, chosen_indices):
         """
         For each product, choose a price using UCB1.
