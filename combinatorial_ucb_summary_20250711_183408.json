@@ -1,0 +1,27 @@
+{
+  "timestamp": "2025-07-11T18:34:08.292231",
+  "total_experiments": 4400,
+  "total_time_minutes": 21.320337347189586,
+  "seeds": [
+    42,
+    123,
+    789,
+    456,
+    999
+  ],
+  "best_configuration": {
+    "cost_coeff": 0.1,
+    "confidence_multiplier": 0.5,
+    "softmax_temperature": 0.1,
+    "performance_score": 30.05065165802371,
+    "efficiency": 48.87405651550122,
+    "final_regret": 2458.7999999999984,
+    "regret_compliance": false
+  },
+  "overall_statistics": {
+    "mean_performance_score": 23.40270846497456,
+    "std_performance_score": 1.3162267942870387,
+    "compliance_rate": 0.0,
+    "mean_efficiency": 37.84933139003418
+  }
+}

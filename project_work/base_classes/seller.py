@@ -65,6 +65,17 @@ class Seller:
         self.history_rewards = []
         self.history_chosen_prices = []
 
+        # COMPREHENSIVE BUDGET TRACKING - Available for all seller classes
+        self.initial_budget = self.B  # Store original budget
+        self.remaining_budget = self.B  # Current remaining budget
+        self.cost_history = []  # Track costs per round
+        self.budget_depleted = False  # Flag for budget depletion
+        self.budget_depletion_round = None  # Round when budget was depleted
+        self.total_spent = 0.0  # Total amount spent so far
+
+        log_seller(f"Budget tracking initialized: "
+                   f"Initial budget = {self.initial_budget}")
+
     def calculate_price_weighted_rewards(self, actions, rewards):
         """
         Calculate price-weighted rewards (price × purchase).
@@ -116,7 +127,7 @@ class Seller:
 
     def update_ucb1(self, actions, rewards):
         """
-        Update UCB1 statistics for all products.
+        Update UCB1 statistics for all products with budget tracking.
         :param actions: ndarray of shape (num_products,)
             with price indices for each product.
         :param rewards: ndarray of shape (num_products,)
@@ -129,6 +140,13 @@ class Seller:
             np.arange(self.num_products), actions.astype(int)
         ]
         price_weighted_rewards = chosen_prices * rewards
+
+        # Calculate costs for budget tracking
+        costs = chosen_prices * self.cost_coeff
+        total_cost = np.sum(costs)
+
+        # UPDATE BUDGET TRACKING
+        self.update_budget(total_cost)
 
         for i, price_idx in enumerate(actions):
             price_idx = int(price_idx)  # Ensure price_idx is an integer
@@ -154,7 +172,8 @@ class Seller:
 
     def update_primal_dual(self, actions, rewards):
         """
-        Update UCB statistics for all products in a single call.
+        Update UCB statistics for all products in a single call with
+        budget tracking.
         :param actions: ndarray of shape (num_products,)
             with price indices for each product.
         :param rewards: ndarray of shape (num_products,)
@@ -169,6 +188,9 @@ class Seller:
         # Calculate cost for current step before updating lambda
         current_cost = np.sum(chosen_prices) * self.cost_coeff
         self.cost[self.total_steps] = current_cost
+
+        # UPDATE BUDGET TRACKING
+        self.update_budget(current_cost)
 
         # Update lambda for next step if not at final step
         if self.total_steps < self.T - 1:
@@ -328,6 +350,14 @@ class Seller:
         self.history_rewards = []
         self.history_chosen_prices = []
 
+        # Reset comprehensive budget tracking
+        self.initial_budget = setting.B
+        self.remaining_budget = setting.B
+        self.cost_history = []
+        self.budget_depleted = False
+        self.budget_depletion_round = None
+        self.total_spent = 0.0
+
         # Reset algorithm-specific parameters
         if self.algorithm == "primal_dual":
             self.cost = np.zeros((self.T, 1))
@@ -335,3 +365,63 @@ class Seller:
             self.B = setting.B  # Reset production capacity
 
         log_algorithm_choice(self.algorithm)
+
+    def update_budget(self, cost):
+        """
+        Update budget tracking with the cost incurred in current round.
+        This method should be called by all seller classes when costs are
+        incurred.
+
+        Args:
+            cost (float): Cost incurred in current round
+        """
+        # Record the cost
+        self.cost_history.append(cost)
+        self.total_spent += cost
+
+        # Update remaining budget
+        self.remaining_budget = max(0, self.remaining_budget - cost)
+
+        # Check for budget depletion
+        if not self.budget_depleted and self.remaining_budget <= 0:
+            self.budget_depleted = True
+            # Current round number
+            self.budget_depletion_round = len(self.cost_history)
+            log_seller(f"Budget depleted at round "
+                       f"{self.budget_depletion_round}")
+
+    def get_budget_status(self):
+        """
+        Get detailed budget status information.
+
+        Returns:
+            dict: Budget status information including depletion status,
+                  remaining budget, etc.
+        """
+        budget_util = ((self.total_spent / self.initial_budget) * 100
+                       if self.initial_budget > 0 else 0)
+        cost_hist = (np.array(self.cost_history) if self.cost_history
+                     else np.array([]))
+
+        return {
+            'initial_budget': self.initial_budget,
+            'remaining_budget': self.remaining_budget,
+            'total_spent': self.total_spent,
+            'budget_depleted': self.budget_depleted,
+            'budget_depletion_round': self.budget_depletion_round,
+            'budget_utilization': budget_util,
+            'cost_history': cost_hist
+        }
+
+    def get_budget_summary_string(self):
+        """
+        Get a formatted string summary of budget status for display.
+
+        Returns:
+            str: Formatted budget status string
+        """
+        if self.budget_depleted:
+            return f"Budget depleted at round: {self.budget_depletion_round}"
+        else:
+            return (f"Budget NOT depleted — "
+                    f"Remaining: {self.remaining_budget:.0f}")
