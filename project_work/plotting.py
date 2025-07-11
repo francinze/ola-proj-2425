@@ -291,12 +291,17 @@ def plot_all(environment):
         else:
             # Multiple products - show as lines
             for i in range(min(3, price_history.shape[1])):  # Max 3
-                axes[1, 0].plot(price_history[:, i], label=f'Product {i}',
-                                alpha=0.8)
-            axes[1, 0].set_title('Price Selection History')
-            axes[1, 0].set_xlabel('Round')
-            axes[1, 0].set_ylabel('Selected Price')
-            axes[1, 0].legend()
+                x_vals, y_vals, smoothed = smooth_data(price_history[:, i])
+                axes[1, 0].plot(
+                    x_vals,
+                    y_vals,
+                    label=f'Product {i}' + (" (Smoothed)" if smoothed else ""),
+                    alpha=0.8
+                )
+                axes[1, 0].set_title('Price Selection History')
+                axes[1, 0].set_xlabel('Round')
+                axes[1, 0].set_ylabel('Selected Price')
+                axes[1, 0].legend()
     else:
         # Fallback: show instantaneous regret
         axes[1, 0].plot(regrets, label='Instantaneous Regret',
@@ -318,11 +323,12 @@ def plot_all(environment):
                                           return_counts=True)
         proportions = counts / T
 
-        bars = axes[1, 1].bar(range(len(unique_prices)), proportions,
-                              tick_label=[f'{p:.2f}' for p in unique_prices])
+        bars = axes[1, 1].bar(range(len(unique_prices)), proportions)
         axes[1, 1].set_title('Proportion of Times Each Price Was Selected')
         axes[1, 1].set_xlabel('Price Value')
         axes[1, 1].set_ylabel('Proportion of Selections')
+        axes[1, 1].set_xticks(range(len(unique_prices)))
+        axes[1, 1].set_xticklabels([f'{p:.2f}' for p in unique_prices])
 
         # Color bars by frequency
         max_prop = max(proportions)
@@ -475,25 +481,25 @@ def plot_multi_trial_ucb_analysis(environments_list, n_trials=None,
         print(f"Empirical vs Theoretical ratio: {ratio:.3f}")
 
 
-def smooth_data(data, threshold=50, window_divisor=5, min_window=10):
+def smooth_data(data, threshold=50, window_divisor=4, min_window=12):
     """
-    Generic smoothing function for time series data.
-
-    Args:
-        data: 1D array of data to smooth
-        threshold: minimum length to apply smoothing
-        window_divisor: divisor for calculating window size
-        min_window: minimum window size
-
-    Returns:
-        tuple: (x_values, smoothed_data) or (original_indices, original_data)
+    Smoothing with input padding for better edge behavior.
     """
     if len(data) > threshold:
         window = max(min_window, len(data) // window_divisor)
         if window % 2 == 0:
             window += 1
 
-        smoothed = np.convolve(data, np.ones(window) / window, mode='same')
+        # Pad input data to reduce edge effects
+        pad_size = window // 2
+        padded_data = np.pad(data, pad_size, mode='reflect')
+
+        # Convolve and extract original region
+        smoothed_padded = np.convolve(
+            padded_data, np.ones(window) / window, mode='same'
+        )
+        smoothed = smoothed_padded[pad_size:-pad_size]
+
         x_smoothed = np.arange(len(data))
         return x_smoothed, smoothed, True
     else:
