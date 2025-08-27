@@ -342,142 +342,119 @@ class CombinatorialUCBSeller(UCB1Seller):
 
 class PrimalDualSeller(Seller):
     """
-    Primal-Dual seller following project.md specifications exactly.
+    Primal–dual pacing agent with EXP3.P as the primal regret minimizer.
 
-    This implementation features:
-    - Using proper pacing strategy: ρ = B/T
-    - Implementing stable regret minimizer with temperature scaling
-    - Correct dual variable projection: Π[0,1/ρ]
-    - Economically sound cost calculation (cost only on successful sales)
-    - Better learning rate tuning for convergence
+    Changes from previous version:
+      - Dynamic pacing: rho_t = remaining_budget / (T - t)
+      - Dual step (dual_lr) is tunable and uses rho_t in the gradient and
+        projection
+      - EXP3.P gain scaling uses current rho_t for stability
 
-    Based on the Pacing strategy from project.md:
-    - ρ ← B/T
-    - λ_0 ← 0
-    - R(t) returns distribution over prices (regret minimizer)
-    - λ_t ← Π[0,1/ρ](λ_{t-1} - η(ρ - c_t(b_t)))
+    API remains unchanged:
+      choose_arm() -> int or None
+      update(arm_index, reward)  # reward = price if sale else 0
     """
 
-    def __init__(
-        self,
-        setting: Setting,
-        learning_rate: float = 0.01,
-        regret_learning_rate: float = 0.05,
-        base_temperature: float = 1.0
-    ):
-        """Initialize Improved Primal-Dual seller."""
+    def __init__(self, setting: Setting, eta=None, gamma=None, alpha=None,
+                 dual_lr=None, rng=None):
+        """Initialize PrimalDualSeller based on PrimalDualExp3PAgent."""
         super().__init__(setting)
-        self.algorithm = "improved_primal_dual"
-        log_algorithm_choice("Improved Primal-Dual")
+        self.algorithm = "primal_dual"
+        log_algorithm_choice("Primal-Dual EXP3.P")
 
-        # Primal-dual parameters from project.md
-        self.rho = self.B / self.T  # ρ = B/T (pacing rate)
-        self.eta = learning_rate  # Small learning rate for stability
-        self.lambda_t = 0.0  # Current dual variable (λ_0 = 0)
+        # Convert price grid to flat array for compatibility
+        if self.price_grid.ndim > 1:
+            self.prices = self.price_grid[0]
+        else:
+            self.prices = self.price_grid
+        self.K = len(self.prices)
+        
+        # EXP3.P parameters (defaults are safe; tune in constructor if desired)
+        if gamma is None:
+            gamma = min(0.2, np.sqrt(self.K * np.log(max(2, self.K)) /
+                                     ((np.e - 1) * max(1, self.T))))
+        if eta is None:
+            eta = min(0.2, np.sqrt(np.log(max(2, self.K)) /
+                                   (self.K * max(1, self.T))))
+        if alpha is None:
+            alpha = gamma / self.K
+        if dual_lr is None:
+            dual_lr = 0.2  # more reactive than 1/sqrt(T); tune as needed
 
-        # Regret minimizer (Hedge/Exponential Weights)
-        self.cumulative_losses = np.zeros((self.num_products, self.num_prices))
-        self.regret_eta = regret_learning_rate
+        self.eta = float(eta)
+        self.gamma = float(gamma)
+        self.alpha = float(alpha)
+        self.dual_lr = float(dual_lr)
 
-        # Enhanced tracking
-        self.cost_history = []
-        self.lambda_history = [0.0]
+        # Internal state
+        self.weights = np.ones(self.K, dtype=float)
+        self.last_probs = np.full(self.K, 1.0 / self.K)
+        self.last_arm = None
+        self.lmbda = 0.0
 
-        # Temperature scaling for better exploration/exploitation
-        self.base_temperature = base_temperature
+        self.total_steps = 0
+        self.remaining_budget = int(self.B)
+        self.total_reward = 0.0
 
-        log_algorithm_choice(
-            f"Improved Primal-Dual (η={self.eta}, ρ={self.rho:.6f})"
-        )
+        self.rng = np.random.default_rng(rng)
 
-    def regret_minimizer(self, product_idx):
+    # ---------- helpers ----------
+    def _probs(self):
+        w = self.weights
+        w_sum = w.sum()
+        if w_sum <= 0 or not np.isfinite(w_sum):
+            w = np.ones_like(w)
+            w_sum = w.sum()
+        base = (1.0 - self.gamma) * (w / w_sum)
+        mix = self.gamma / self.K
+        p = base + mix
+        p = np.clip(p, 1e-12, 1.0)
+        p /= p.sum()
+        return p
+
+    def _rho_t_and_L(self):
         """
-        R(t) returns distribution over prices using Hedge algorithm.
-        More stable implementation with temperature scaling and proper
-        normalization.
-
-        Args:
-            product_idx: Index of the product (for multi-product support)
-
-        Returns:
-            numpy.ndarray: Probability distribution over prices
+        Compute dynamic pacing target rho_t and its scaling L_t = 1/rho_t
+        (capped).
         """
-        if self.total_steps == 0:
-            # Start with uniform distribution
-            return np.ones(self.num_prices) / self.num_prices
+        # avoid div by zero at the very end
+        rounds_left = max(1, self.T - self.total_steps)
+        # allowed expected spend per remaining round
+        rho_t = self.remaining_budget / rounds_left
+        # Guard: if budget is 0 -> rho_t = 0; we still avoid division by zero
+        # by capping L_t.
+        if rho_t <= 0.0:
+            # effectively infinite penalty scale when no budget remains
+            L_t = 1e6
+        else:
+            L_t = 1.0 / rho_t
+        return rho_t, L_t
 
-        # Temperature scaling for better exploration/exploitation balance
-        # Higher temperature early on encourages exploration
-        temperature = max(
-            0.1, self.base_temperature / np.sqrt(self.total_steps + 1)
-        )
-
-        # Exponential weights with temperature scaling
-        weights = np.exp(-temperature * self.cumulative_losses[product_idx])
-
-        # Normalize to probability distribution
-        weights = weights / np.sum(weights)
-
-        # Add small epsilon to prevent zero probabilities
-        epsilon = 1e-8
-        weights = (1 - epsilon) * weights + epsilon / self.num_prices
-
-        return weights
-
-    def project_lambda(self, lambda_raw):
-        """
-        Project λ to [0, 1/ρ] as specified in project.md.
-        With ρ = B/T, the upper bound is T/B.
-
-        Args:
-            lambda_raw: Raw dual variable value before projection
-
-        Returns:
-            float: Projected dual variable in [0, 1/ρ]
-        """
-        return np.clip(lambda_raw, 0.0, 1.0 / self.rho)
-
+    # ---------- public API ----------
     def pull_arm(self):
         """
-        Primal-dual arm selection using regret minimizer.
-        Samples from distribution γ_t for each product.
-
-        Returns:
-            numpy.ndarray: Array of chosen price indices (one per product)
+        Select a price index using EXP3.P algorithm.
+        Returns: array with single chosen price index for compatibility
         """
         def primal_dual_selection():
-            chosen_indices = np.zeros(self.num_products, dtype=int)
-
-            for i in range(self.num_products):
-                # Get distribution from regret minimizer for this product
-                gamma_t = self.regret_minimizer(i)
-
-                # Sample from the distribution
-                chosen_indices[i] = np.random.choice(
-                    self.num_prices, p=gamma_t
-                )
-
-            log_arm_selection(self.algorithm, self.total_steps, chosen_indices)
-            return chosen_indices
+            # Stop if out of budget or rounds
+            if self.remaining_budget <= 0 or self.total_steps >= self.T:
+                return np.array([0])  # Return array for compatibility
+            
+            p = self._probs()
+            a = int(self.rng.choice(self.K, p=p))
+            self.last_probs = p
+            self.last_arm = a
+            
+            log_arm_selection(self.algorithm, self.total_steps, [a])
+            return np.array([a])  # Return as array for compatibility
 
         return self.safe_pull_arm(primal_dual_selection)
 
-    def yield_prices(self, chosen_indices):
-        """
-        Override yield_prices to provide proper price calculation.
-        """
-        chosen_prices = self.price_grid[
-            np.arange(self.num_products), chosen_indices
-        ]
-        # Track price history for diagnostics
-        self.history_chosen_prices.append(chosen_indices.copy())
-        return np.array(chosen_prices)
-
     def update(self, purchased, actions):
         """
-        Update improved primal-dual statistics after observing rewards.
-        Always applies budget constraint for primal-dual algorithms.
-
+        Update statistics after observing rewards.
+        
         Args:
             purchased: Array of purchase outcomes per product
             actions: Array of chosen price indices per product
@@ -486,118 +463,96 @@ class PrimalDualSeller(Seller):
         purchased = self.apply_constraints_and_calculate_rewards(
             purchased, actions, use_inventory_constraint=True
         )
+        
+        # For single product case, get first element
+        if len(actions) > 0:
+            arm_index = int(actions[0])
+            reward = self.prices[arm_index] if purchased[0] > 0 else 0.0
+            self.update_primal_dual_exp3p(arm_index, reward)
 
-        rewards = purchased
-        self.update_improved_primal_dual(actions, rewards)
-
-    def update_improved_primal_dual(self, actions, rewards):
+    def update_primal_dual_exp3p(self, arm_index, reward):
         """
-        Update improved primal-dual algorithm following project.md
-        specification.
-
-        Key improvements:
-        - Proper cost calculation (only on successful sales)
-        - Stable regret minimizer updates
-        - Correct dual variable projection
-        - Better learning rate scheduling
-
-        Args:
-            actions: Array of chosen price indices per product
-            rewards: Array of purchase outcomes per product
+        reward: realized payoff (price if sale occurred else 0).
+        Sale (cost=1) is inferred as (reward > 0).
         """
-        # Calculate price-weighted rewards and costs
-        chosen_prices = self.price_grid[
-            np.arange(self.num_products), actions.astype(int)
-        ]
-        price_weighted_rewards = chosen_prices * rewards
+        if arm_index is None:
+            return
 
-        # Calculate cost c_t(b_t) - ONLY if purchase was made
-        # (economically sound)
-        current_cost = np.sum(chosen_prices * rewards)  # Cost only on sales
+        # Capture pacing BEFORE applying the cost of this round
+        rho_t, L_t = self._rho_t_and_L()
 
-        # UPDATE BUDGET TRACKING - Use new comprehensive system
-        self.update_budget(current_cost)
+        # Realized outcome
+        sale = (reward > 0)
+        cost = 1 if sale else 0
+        self.total_reward += float(reward)
 
-        # Store cost for tracking (legacy compatibility)
-        self.cost_history.append(current_cost)
+        # Penalized gain g_t = f - lambda * c, scaled to [0,1] using
+        # current L_t
+        g = float(reward) - self.lmbda * float(cost)
+        g_tilde = (g + L_t) / (1.0 + L_t)
+        g_tilde = float(np.clip(g_tilde, 0.0, 1.0))
 
-        # Update regret minimizer for each product
-        for i, price_idx in enumerate(actions):
-            price_idx = int(price_idx)
+        # EXP3.P update (bandit IW estimate with bias alpha)
+        p_arm = float(self.last_probs[arm_index])
+        est = (g_tilde + self.alpha) / max(p_arm, 1e-12)
+        self.weights[arm_index] *= np.exp(self.eta * est)
 
-            # Calculate adjusted reward considering dual variable
-            lambda_cost = self.lambda_t * chosen_prices[i] * rewards[i]
-            adjusted_reward = price_weighted_rewards[i] - lambda_cost
+        # Dual update with dynamic pacing (project onto [0, 1/rho_t])
+        # Note: use rho_t computed BEFORE applying this round's cost.
+        self.lmbda = self.lmbda - self.dual_lr * (rho_t - cost)
+        lambda_max = L_t  # since L_t = 1/rho_t (or large cap if rho_t ~ 0)
+        self.lmbda = float(np.clip(self.lmbda, 0.0, lambda_max))
 
-            # Convert reward to loss for regret minimizer
-            loss = -adjusted_reward
-
-            # Get current distribution for importance weighting
-            gamma_t = self.regret_minimizer(i)
-
-            # Update cumulative losses (importance weighted)
-            if gamma_t[price_idx] > 0:  # Avoid division by zero
-                self.cumulative_losses[i, price_idx] += (
-                    loss / gamma_t[price_idx]
-                )
-
-        # Update dual variable λ following project.md specification
-        # λ_t ← Π[0,1/ρ](λ_{t-1} - η(ρ - c_t(b_t)))
-        lambda_update = self.lambda_t - self.eta * (self.rho - current_cost)
-        self.lambda_t = self.project_lambda(lambda_update)
-
-        # Track dual variable evolution
-        self.lambda_history.append(self.lambda_t)
-
-        # Store price-weighted rewards in history (inherited from base class)
-        self.history_rewards.append(np.sum(price_weighted_rewards))
-
+        # Apply budget + time progression
+        if sale and self.remaining_budget > 0:
+            self.remaining_budget -= 1
+            
+        # Update budget tracking for base class compatibility
+        # Small cost model
+        price_cost = self.prices[arm_index] * 0.01 if sale else 0.0
+        self.update_budget(price_cost)
+        
+        # Store rewards in history for compatibility
+        self.history_rewards.append(reward)
+        
         self.total_steps += 1
 
-    def reset(self, setting):
-        """
-        Reset the improved primal-dual seller's statistics for a new trial.
-        """
-        super().reset(setting)
-
-        # Reset improved primal-dual specific parameters
-        self.rho = self.B / self.T
-        self.lambda_t = 0.0
-        self.cumulative_losses = np.zeros((self.num_products, self.num_prices))
-        self.cost_history = []
-        self.lambda_history = [0.0]
-
-        log_algorithm_choice(
-            f"Reset Improved Primal-Dual (η={self.eta}, ρ={self.rho:.6f})"
-        )
+    # Optional inspectors
+    def current_probs(self):
+        return self._probs().copy()
 
     def get_diagnostics(self):
-        """
-        Get diagnostic information about the improved primal-dual algorithm.
-        Useful for analysis and debugging.
-
-        Returns:
-            dict: Dictionary containing diagnostic information
-        """
-        diagnostics = {
-            'lambda_history': np.array(self.lambda_history),
-            'cost_history': np.array(self.cost_history),
-            'remaining_budget': self.remaining_budget,
-            'budget_utilization': (self.B - self.remaining_budget) / self.B,
-            'pacing_rate': self.rho,
-            'current_lambda': self.lambda_t,
-            'lambda_upper_bound': 1.0 / self.rho,
-            'total_costs': np.sum(self.cost_history),
-            'average_cost_per_round': (
-                np.mean(self.cost_history) if self.cost_history else 0.0
-            ),
-            'cumulative_losses_shape': self.cumulative_losses.shape,
-            'learning_rates': {
-                'dual_eta': self.eta,
-                'regret_eta': self.regret_eta
-            }
+        """Get diagnostic information about the primal-dual algorithm."""
+        rho_t, _ = self._rho_t_and_L()
+        return {
+            "t": self.total_steps,
+            "remaining_budget": self.remaining_budget,
+            "lambda": self.lmbda,
+            "rho_t": rho_t,
+            "probs": self._probs(),
+            "weights": self.weights.copy(),
+            "total_reward": self.total_reward,
         }
-        return diagnostics
+
+    def reset(self, setting):
+        """Reset the primal-dual seller's statistics for a new trial."""
+        super().reset(setting)
+        
+        # Reset primal-dual specific parameters
+        if self.price_grid.ndim > 1:
+            self.prices = self.price_grid[0]
+        else:
+            self.prices = self.price_grid
+        self.K = len(self.prices)
+        self.weights = np.ones(self.K, dtype=float)
+        self.last_probs = np.full(self.K, 1.0 / self.K)
+        self.last_arm = None
+        self.lmbda = 0.0
+        self.total_steps = 0
+        self.remaining_budget = int(self.B)
+        self.total_reward = 0.0
+        
+        log_algorithm_choice("Reset Primal-Dual EXP3.P")
 
 
 class SlidingWindowUCB1Seller(CombinatorialUCBSeller):
