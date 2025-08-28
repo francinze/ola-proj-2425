@@ -9,70 +9,7 @@ from .logger import (log_algorithm_choice,
                      log_ucb1_update, log_arm_selection)
 
 
-class UCBBaseSeller(Seller):
-    """
-    Base class for UCB-based sellers with common functionality.
-    """
-
-    def __init__(self, setting: Setting,
-                 use_inventory_constraint: bool = True):
-        """Initialize UCB base seller."""
-        super().__init__(setting)
-        self.use_inventory_constraint = use_inventory_constraint
-
-        # Common UCB tracking variables
-        self.total_rewards = np.zeros((self.num_products, self.num_prices))
-        self.avg_rewards = np.zeros((self.num_products, self.num_prices))
-
-    def update_ucb_statistics(self, actions, price_weighted_rewards):
-        """
-        Common UCB statistics update method with budget tracking.
-        """
-        self.total_steps += 1
-
-        # Calculate costs for budget tracking
-        chosen_prices = self.price_grid[np.arange(self.num_products),
-                                        actions.astype(int)]
-        # Use a simple cost model: cost proportional to chosen prices
-        costs = chosen_prices * 0.1  # 10% of price as cost
-        total_cost = np.sum(costs)
-        
-        # UPDATE BUDGET TRACKING - Available from base Seller class
-        self.update_budget(total_cost)
-
-        for i, price_idx in enumerate(actions):
-            price_idx = int(price_idx)
-
-            # Update counts and rewards
-            self.counts[i, price_idx] += 1
-            self.total_rewards[i, price_idx] += price_weighted_rewards[i]
-
-            # Incremental average update (numerically stable)
-            self.avg_rewards[i, price_idx] = (
-                self.total_rewards[i, price_idx] / self.counts[i, price_idx]
-            )
-
-            # Update UCB values for this arm
-            if self.counts[i, price_idx] > 0:
-                confidence_bound = np.sqrt(
-                    2 * np.log(self.total_steps) / self.counts[i, price_idx]
-                )
-                self.ucbs[i, price_idx] = (
-                    self.avg_rewards[i, price_idx] + confidence_bound
-                )
-
-            # Also update the values array for compatibility with base class
-            self.values[i, price_idx] = self.avg_rewards[i, price_idx]
-
-            log_ucb1_update(i, price_idx, self.counts[i, price_idx],
-                            self.values[i, price_idx],
-                            self.ucbs[i, price_idx])
-
-        # Store total price-weighted rewards in history
-        self.history_rewards.append(np.sum(price_weighted_rewards))
-
-
-class UCB1Seller(UCBBaseSeller):
+class UCB1Seller(Seller):
     """
     Seller class implementing UCB1 algorithm for Requirements 1 and 2.
 
@@ -93,11 +30,16 @@ class UCB1Seller(UCBBaseSeller):
             setting: Setting object with configuration
             use_inventory_constraint: Whether to enforce inventory constraints
         """
-        super().__init__(setting, use_inventory_constraint)
-        self.algorithm = "ucb1"
+        super().__init__(setting, algorithm="ucb1")
+        self.use_inventory_constraint = use_inventory_constraint
 
         # UCB1-specific tracking variables
         self.last_chosen_arms = np.zeros(self.num_products, dtype=int)
+
+        # UCB tracking variables
+        self.total_rewards = np.zeros((self.num_products, self.num_prices))
+        self.avg_rewards = np.zeros((self.num_products, self.num_prices))
+        self.ucbs = np.full((self.num_products, self.num_prices), np.inf)
 
         log_algorithm_choice(
             f"UCB1 (inventory_constraint={use_inventory_constraint})"
@@ -151,8 +93,48 @@ class UCB1Seller(UCBBaseSeller):
         price_weighted_rewards = self.calculate_price_weighted_rewards(
             actions, purchased)
 
-        # Update UCB1 algorithm with the computed rewards
-        self.update_ucb_statistics(actions, price_weighted_rewards)
+        self.total_steps += 1
+
+        # Calculate costs for budget tracking
+        chosen_prices = self.price_grid[np.arange(self.num_products),
+                                        actions.astype(int)]
+        # Use a simple cost model: cost proportional to chosen prices
+        costs = chosen_prices * 0.1  # 10% of price as cost
+        total_cost = np.sum(costs)
+
+        # UPDATE BUDGET TRACKING - Available from base Seller class
+        self.update_budget(total_cost)
+
+        for i, price_idx in enumerate(actions):
+            price_idx = int(price_idx)
+
+            # Update counts and rewards
+            self.counts[i, price_idx] += 1
+            self.total_rewards[i, price_idx] += price_weighted_rewards[i]
+
+            # Incremental average update (numerically stable)
+            self.avg_rewards[i, price_idx] = (
+                self.total_rewards[i, price_idx] / self.counts[i, price_idx]
+            )
+
+            # Update UCB values for this arm
+            if self.counts[i, price_idx] > 0:
+                confidence_bound = np.sqrt(
+                    2 * np.log(self.total_steps) / self.counts[i, price_idx]
+                )
+                self.ucbs[i, price_idx] = (
+                    self.avg_rewards[i, price_idx] + confidence_bound
+                )
+
+            # Also update the values array for compatibility with base class
+            self.values[i, price_idx] = self.avg_rewards[i, price_idx]
+
+            log_ucb1_update(i, price_idx, self.counts[i, price_idx],
+                            self.values[i, price_idx],
+                            self.ucbs[i, price_idx])
+
+        # Store total price-weighted rewards in history
+        self.history_rewards.append(np.sum(price_weighted_rewards))
 
 
 class CombinatorialUCBSeller(UCB1Seller):
@@ -165,7 +147,7 @@ class CombinatorialUCBSeller(UCB1Seller):
     - Computes UCB bounds for rewards (f_t) and LCB bounds for costs (c_t)
     - Solves LP to get distribution γ_t over price combinations
     - Samples from γ_t instead of greedy selection
-    
+
     Key fixes:
     - Proper cost calculation (costs = prices * cost_coeff, NOT rewards)
     - Simplified but effective exploration
@@ -184,16 +166,16 @@ class CombinatorialUCBSeller(UCB1Seller):
         self.cost_counts = np.zeros((self.num_products, self.num_prices))
         # Use optimized cost coefficient
         self.cost_coeff = cost_coeff
-        
+
         # Enhanced learning parameters - scale with problem size
         self.min_exploration_rounds = max(3, int(np.log(setting.T)))
         self.exploration_bonus_factor = 3.0  # Enhanced exploration bonus
-        
+
         # Optimistic initialization for better convergence
         initial_value = 2.0  # Optimistic initial values
         self.values.fill(initial_value)
         self.cost_values.fill(0.005)  # Small initial cost estimate
-        
+
         # Algorithm-specific parameters
         self.confidence_scaling = 1.5  # Enhanced confidence bounds
         self.temperature_scaling = 5.0  # Adaptive temperature
@@ -204,7 +186,7 @@ class CombinatorialUCBSeller(UCB1Seller):
         """
         ucb_rewards = np.zeros((self.num_products, self.num_prices))
         lcb_costs = np.zeros((self.num_products, self.num_prices))
-        
+
         for i in range(self.num_products):
             for j in range(self.num_prices):
                 n = self.counts[i, j]
@@ -213,13 +195,13 @@ class CombinatorialUCBSeller(UCB1Seller):
                     log_factor = max(1, np.log(self.total_steps + 1))
                     confidence = (self.confidence_scaling *
                                   np.sqrt(2 * log_factor / n))
-                    
+
                     # Enhanced exploration bonus for better convergence
                     if n <= self.min_exploration_rounds:
                         exploration_bonus = (self.exploration_bonus_factor *
                                              np.sqrt(log_factor / (n + 1)))
                         confidence += exploration_bonus
-                    
+
                     ucb_rewards[i, j] = self.values[i, j] + confidence
                     lcb_costs[i, j] = max(0,
                                           self.cost_values[i, j] - confidence)
@@ -227,22 +209,22 @@ class CombinatorialUCBSeller(UCB1Seller):
                     # Very large bonus for unexplored arms
                     ucb_rewards[i, j] = np.inf
                     lcb_costs[i, j] = 0.0
-                    
+
         return ucb_rewards, lcb_costs
 
     def solve_lp_for_distribution(self, ucb_rewards, lcb_costs):
         """Enhanced softmax with adaptive temperature scheduling."""
         expected_profits = ucb_rewards - lcb_costs
         gamma_t = np.zeros((self.num_products, self.num_prices))
-        
+
         # Enhanced temperature scheduling for optimal learning
         # Adaptive decay with maintained exploration
         temperature = max(0.01, self.temperature_scaling /
                           np.log(self.total_steps + 5))
-        
+
         for i in range(self.num_products):
             profits = expected_profits[i]
-            
+
             # Handle infinite values properly
             finite_mask = np.isfinite(profits)
             if np.any(finite_mask):
@@ -250,7 +232,7 @@ class CombinatorialUCBSeller(UCB1Seller):
                 max_finite = np.max(finite_profits)
                 profits = np.where(np.isinf(profits), max_finite + 20, profits)
             profits = np.where(np.isnan(profits), 0, profits)
-            
+
             # Enhanced exploration bonus for better convergence
             for j in range(self.num_prices):
                 if self.counts[i, j] <= self.min_exploration_rounds:
@@ -259,19 +241,19 @@ class CombinatorialUCBSeller(UCB1Seller):
                     bonus = 5.0 * np.sqrt(exploration_factor /
                                           (self.counts[i, j] + 1))
                     profits[j] += bonus
-            
+
             # Temperature-scaled softmax with adaptive convergence
             scaled_profits = profits / temperature
             max_val = np.max(scaled_profits)
             exp_vals = np.exp(scaled_profits - max_val)
             sum_exp = np.sum(exp_vals)
-            
+
             if sum_exp > 0:
                 gamma_t[i] = exp_vals / sum_exp
             else:
                 # Uniform distribution as fallback
                 gamma_t[i] = np.ones(self.num_prices) / self.num_prices
-                
+
         return gamma_t
 
     def sample_from_distribution(self, gamma_t):
@@ -303,31 +285,28 @@ class CombinatorialUCBSeller(UCB1Seller):
         FIXED update method with proper cost calculation and budget tracking.
         """
         self.total_steps += 1
-        
+
         chosen_prices = self.price_grid[np.arange(self.num_products),
                                         actions.astype(int)]
         price_weighted_rewards = chosen_prices * rewards
-        
-        # FIXED: Proper cost calculation
-        # Cost should be independent of rewards - use a reasonable model
+
         costs = chosen_prices * self.cost_coeff  # Simple proportional cost
         total_cost = np.sum(costs)  # Total cost for this round
-        
-        # UPDATE BUDGET TRACKING - Available from base Seller class
+
         self.update_budget(total_cost)
-        
+
         for i, price_idx in enumerate(actions):
             price_idx = int(price_idx)
-            
+
             # Update reward statistics
             self.counts[i, price_idx] += 1
             n = self.counts[i, price_idx]
             old_value = self.values[i, price_idx]
-            
+
             reward_i = price_weighted_rewards[i]
             self.values[i, price_idx] = old_value + (reward_i - old_value) / n
-            
-            # Update cost statistics - FIXED VERSION
+
+            # Update cost statistics
             old_cost = self.cost_values[i, price_idx]
             cost_i = costs[i]  # Use the proper cost, not reward-dependent!
             self.cost_values[i, price_idx] = old_cost + (cost_i - old_cost) / n
@@ -335,14 +314,14 @@ class CombinatorialUCBSeller(UCB1Seller):
             # Log the update
             log_ucb1_update(i, price_idx, self.counts[i, price_idx],
                             self.values[i, price_idx], 0.0)
-        
+
         # Store price-weighted rewards in history
         self.history_rewards.append(np.sum(price_weighted_rewards))
 
 
 class PrimalDualSeller(Seller):
     """
-    Primal–dual pacing agent with EXP3.P as the primal regret minimizer.
+    Primal-dual pacing agent with EXP3.P as the primal regret minimizer.
 
     Changes from previous version:
       - Dynamic pacing: rho_t = remaining_budget / (T - t)
@@ -368,7 +347,7 @@ class PrimalDualSeller(Seller):
         else:
             self.prices = self.price_grid
         self.K = len(self.prices)
-        
+
         # EXP3.P parameters (defaults are safe; tune in constructor if desired)
         if gamma is None:
             gamma = min(0.2, np.sqrt(self.K * np.log(max(2, self.K)) /
@@ -440,12 +419,12 @@ class PrimalDualSeller(Seller):
             # Stop if out of budget or rounds
             if self.remaining_budget <= 0 or self.total_steps >= self.T:
                 return np.array([0])  # Return array for compatibility
-            
+
             p = self._probs()
             a = int(self.rng.choice(self.K, p=p))
             self.last_probs = p
             self.last_arm = a
-            
+
             log_arm_selection(self.algorithm, self.total_steps, [a])
             return np.array([a])  # Return as array for compatibility
 
@@ -454,7 +433,7 @@ class PrimalDualSeller(Seller):
     def update(self, purchased, actions):
         """
         Update statistics after observing rewards.
-        
+
         Args:
             purchased: Array of purchase outcomes per product
             actions: Array of chosen price indices per product
@@ -463,7 +442,7 @@ class PrimalDualSeller(Seller):
         purchased = self.apply_constraints_and_calculate_rewards(
             purchased, actions, use_inventory_constraint=True
         )
-        
+
         # For single product case, get first element
         if len(actions) > 0:
             arm_index = int(actions[0])
@@ -506,15 +485,15 @@ class PrimalDualSeller(Seller):
         # Apply budget + time progression
         if sale and self.remaining_budget > 0:
             self.remaining_budget -= 1
-            
+
         # Update budget tracking for base class compatibility
         # Small cost model
         price_cost = self.prices[arm_index] * 0.01 if sale else 0.0
         self.update_budget(price_cost)
-        
+
         # Store rewards in history for compatibility
         self.history_rewards.append(reward)
-        
+
         self.total_steps += 1
 
     # Optional inspectors
@@ -537,7 +516,7 @@ class PrimalDualSeller(Seller):
     def reset(self, setting):
         """Reset the primal-dual seller's statistics for a new trial."""
         super().reset(setting)
-        
+
         # Reset primal-dual specific parameters
         if self.price_grid.ndim > 1:
             self.prices = self.price_grid[0]
@@ -551,7 +530,7 @@ class PrimalDualSeller(Seller):
         self.total_steps = 0
         self.remaining_budget = int(self.B)
         self.total_reward = 0.0
-        
+
         log_algorithm_choice("Reset Primal-Dual EXP3.P")
 
 
@@ -695,7 +674,7 @@ class SlidingWindowUCB1Seller(CombinatorialUCBSeller):
         # Calculate costs for budget tracking
         costs = chosen_prices * 0.1  # 10% of price as cost
         total_cost = np.sum(costs)
-        
+
         # UPDATE BUDGET TRACKING - Available from base Seller class
         self.update_budget(total_cost)
 
@@ -757,3 +736,146 @@ class SlidingWindowUCB1Seller(CombinatorialUCBSeller):
             'ucbs_matrix_shape': self.ucbs.shape
         }
         return diagnostics
+
+
+class ClairvoyantOracleSeller(Seller):
+    """
+    Clairvoyant Oracle Seller that knows the true customer valuations.
+
+    This seller serves as a perfect benchmark - it always chooses the optimal
+    price for each customer based on their true valuation. It leverages the
+    Environment class's optimal reward computation methods.
+
+    Key Features:
+    - Always makes optimal pricing decisions
+    - Respects budget constraints
+    - Provides upper bound on achievable performance
+    - Integrates seamlessly with base class architecture
+    """
+
+    def __init__(self, setting: Setting):
+        """Initialize the clairvoyant oracle seller."""
+        super().__init__(setting)
+        self.algorithm = "clairvoyant_oracle"
+        log_algorithm_choice("Clairvoyant Oracle")
+
+        # Oracle-specific tracking
+        self.total_optimal_reward = 0.0
+        self.oracle_decisions = []
+        self.environment_ref = None  # Will be set by Environment
+
+    def set_environment_reference(self, environment):
+        """
+        Set reference to the Environment to access oracle functionality.
+        This is called by the Environment during initialization.
+        """
+        self.environment_ref = environment
+
+    def pull_arm(self):
+        """
+        Select optimal price indices using clairvoyant knowledge.
+        Returns: array of optimal price indices for each product
+        """
+        def oracle_selection():
+            if not self.environment_ref:
+                # Fallback: choose highest affordable prices
+                log_algorithm_choice("Oracle fallback - no environment ref")
+                return np.zeros(self.num_products, dtype=int)
+
+            # Get current customer valuations from environment
+            if hasattr(self.environment_ref, 'current_valuations'):
+                current_valuations = self.environment_ref.current_valuations
+            elif (hasattr(self.environment_ref, 'valuation_history') and
+                  len(self.environment_ref.valuation_history) > 0):
+                current_valuations = self.environment_ref.valuation_history[-1]
+            else:
+                # No valuation available, use conservative strategy
+                return np.zeros(self.num_products, dtype=int)
+
+            # Find optimal price for each product
+            optimal_actions = np.zeros(self.num_products, dtype=int)
+
+            for i in range(self.num_products):
+                valuation = current_valuations[i]
+
+                # Find the highest price <= valuation
+                feasible_mask = self.price_grid[i] <= valuation
+                possible_prices = self.price_grid[i][feasible_mask]
+
+                if len(possible_prices) > 0:
+                    # Find the index of the highest feasible price
+                    optimal_price = np.max(possible_prices)
+                    price_idx = np.where(
+                        self.price_grid[i] == optimal_price
+                    )[0][0]
+                    optimal_actions[i] = price_idx
+                else:
+                    # No feasible price, choose lowest price
+                    optimal_actions[i] = 0
+
+            # Store decision for tracking
+            oracle_prices = self.price_grid[
+                np.arange(self.num_products), optimal_actions
+            ]
+            self.oracle_decisions.append({
+                'valuations': current_valuations.copy(),
+                'optimal_actions': optimal_actions.copy(),
+                'optimal_prices': oracle_prices
+            })
+
+            log_arm_selection(
+                self.algorithm, self.total_steps, optimal_actions
+            )
+            return optimal_actions
+
+        return self.safe_pull_arm(oracle_selection)
+
+    def update(self, purchased, actions):
+        """
+        Update statistics after observing purchase outcomes.
+
+        Args:
+            purchased: Array of purchase outcomes per product
+            actions: Array of chosen price indices per product
+        """
+        # Apply constraints and get processed rewards
+        purchased = self.apply_constraints_and_calculate_rewards(
+            purchased, actions, use_inventory_constraint=True
+        )
+
+        # Calculate oracle reward for this round
+        chosen_prices = self.price_grid[
+            np.arange(self.num_products), actions.astype(int)
+        ]
+        oracle_reward = np.sum(chosen_prices * purchased)
+
+        self.total_optimal_reward += oracle_reward
+
+        # Update budget tracking
+        oracle_cost = np.sum(chosen_prices * 0.01 * purchased)
+        self.update_budget(oracle_cost)
+
+        # Store reward in history for compatibility
+        self.history_rewards.append(oracle_reward)
+
+    def get_diagnostics(self):
+        """Get diagnostic information about the oracle's performance."""
+        return {
+            "algorithm": self.algorithm,
+            "total_steps": self.total_steps,
+            "total_optimal_reward": self.total_optimal_reward,
+            "average_reward_per_step": (
+                self.total_optimal_reward / max(1, self.total_steps)
+            ),
+            "oracle_decisions_count": len(self.oracle_decisions),
+            "has_environment_ref": self.environment_ref is not None,
+            "remaining_budget": getattr(self, 'remaining_budget', self.B)
+        }
+
+    def reset(self, setting):
+        """Reset the oracle seller for a new trial."""
+        super().reset(setting)
+        self.total_optimal_reward = 0.0
+        self.oracle_decisions = []
+        # Note: environment_ref is maintained across resets
+        log_algorithm_choice("Reset Clairvoyant Oracle")

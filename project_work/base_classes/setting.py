@@ -16,11 +16,9 @@ class Setting:
         verbose: str = 'all',
         non_stationary: str = 'no',
         dist_params: float = (0.1, 0.9),
-        algorithm: str = "primal_dual"  # "ucb1" or "primal_dual"
     ):
         self.T = T
         self.n_products = n_products
-        self.algorithm = algorithm  # Algorithm choice: "ucb1" or "primal_dual"
         self.cost_coeff = 0.5
         if B is None:
             prices = np.linspace(0.1, 1.0, int(1 / epsilon))
@@ -35,7 +33,6 @@ class Setting:
         self.verbose = verbose
         self.epsilon = epsilon
         self.non_stationary = non_stationary
-        self.algorithm = algorithm
         self.dist_params = self.create_params(dist_params)
 
     def create_params(self, dist_params):

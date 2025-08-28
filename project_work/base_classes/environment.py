@@ -23,6 +23,11 @@ class Environment:
         configure_logging(setting.verbose)
         # Add valuation history tracking
         self.valuation_history = []
+
+        # Set environment reference for ClairvoyantOracleSeller
+        if hasattr(self.seller, 'set_environment_reference'):
+            self.seller.set_environment_reference(self)
+
         # Collect log of results
         self.reset()
 
@@ -246,7 +251,6 @@ class Environment:
 
         # Basic configuration
         print("📋 CONFIGURATION:")
-        print(f"   Algorithm: {self.setting.algorithm}")
         print(f"   Products: {self.setting.n_products}")
         print(f"   Time steps: {self.setting.T}")
         print(f"   Price levels: {int(1/self.setting.epsilon)}")

@@ -15,7 +15,10 @@ class Seller:
     """
     Seller class for the simulation of a market.
     """
-    def __init__(self, setting: Setting, budget_constraint: str = "lax"):
+    def __init__(
+        self, setting: Setting, budget_constraint: str = "lax",
+        algorithm: str = "primal_dual"
+    ):
         """
         Initialize the Seller class.
         :param products: A list of products.
@@ -29,7 +32,7 @@ class Seller:
         self.B = setting.B  # Production capacity
         self.inv_rule: str = budget_constraint
         self.setting = setting
-        self.algorithm = setting.algorithm  # Algorithm choice
+        self.algorithm = algorithm  # Algorithm choice
 
         # Log algorithm choice
         log_algorithm_choice(self.algorithm)
@@ -337,12 +340,13 @@ class Seller:
         else:
             log_error(f"Unknown algorithm in update: {self.algorithm}")
 
-    def reset(self, setting):
+    def reset(self, setting, algorithm=None):
         """
         Reset the seller's statistics for a new trial.
         """
         self.setting = setting
-        self.algorithm = setting.algorithm  # Update algorithm if changed
+        if algorithm != self.algorithm and algorithm is not None:
+            self.algorithm = algorithm
         self.counts = np.zeros((self.num_products, self.num_prices))
         self.values = np.zeros((self.num_products, self.num_prices))
         self.ucbs = np.full((self.num_products, self.num_prices), np.inf)
