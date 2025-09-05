@@ -64,6 +64,7 @@ class Environment:
 
             if (self.setting.non_stationary == 'slightly' or
                     self.setting.non_stationary == 'highly' or
+                    self.setting.non_stationary == 'trend_flip' or
                     self.setting.non_stationary == 'manual'):
                 if len(self.setting.dist_params) == 2:
                     dist_params = (

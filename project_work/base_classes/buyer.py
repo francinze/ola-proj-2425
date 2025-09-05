@@ -69,12 +69,34 @@ class Buyer:
             )
         elif self.setting.distribution == "beta":
             # Beta(2,5) is skewed toward 0, Beta(5,2) toward 1
-            a = (self.dist_params[0] if self.dist_params is not None and
-                 len(self.dist_params) > 0 else 2)
-            b = (self.dist_params[1] if self.dist_params is not None and
-                 len(self.dist_params) > 1 else 5)
-            self.valuations = np.random.beta(
-                a=a, b=b, size=self.setting.n_products)
+            if self.dist_params is not None and len(self.dist_params) >= 2:
+                a_param = self.dist_params[0]
+                b_param = self.dist_params[1]
+                
+                # Handle different formats: scalar, vector, or default
+                if np.isscalar(a_param):
+                    a = np.full(self.setting.n_products, a_param)
+                else:
+                    a = np.asarray(a_param)
+                    
+                if np.isscalar(b_param):
+                    b = np.full(self.setting.n_products, b_param)
+                else:
+                    b = np.asarray(b_param)
+                    
+                # Ensure vectors have correct length
+                if len(a) != self.setting.n_products:
+                    default_a = a[0] if len(a) > 0 else 2
+                    a = np.full(self.setting.n_products, default_a)
+                if len(b) != self.setting.n_products:
+                    default_b = b[0] if len(b) > 0 else 5
+                    b = np.full(self.setting.n_products, default_b)
+            else:
+                # Default parameters
+                a = np.full(self.setting.n_products, 2)
+                b = np.full(self.setting.n_products, 5)
+                
+            self.valuations = np.random.beta(a=a, b=b)
         elif self.setting.distribution == "lognormal":
             # lognormal with mean ~0.5, clipped to [0,1]
             mean = (self.dist_params[0] if self.dist_params is not None and
